@@ -1,0 +1,29 @@
+{
+    "name": "addon-french-stream",
+    "version": "1.0.0",
+    "description": "Stremio addon pour afficher les catalogues de French Stream",
+    "main": "addon.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev:worker": "wrangler dev",
+        "deploy:worker": "wrangler deploy",
+        "check": "node --check addon.js && node --check server.js && node --check api/index.js && node --check src/worker.mjs && node --check src/stremio-id.mjs && node --check src/cinemeta.mjs && node --check src/french-stream-meta.mjs && node tests/stremio-id.test.mjs && node tests/cinemeta.test.mjs && node tests/french-stream-meta.test.mjs"
+    },
+    "dependencies": {
+        "stremio-addon-sdk": "^1.6.10",
+        "cheerio": "^1.0.0-rc.12",
+        "node-fetch": "^2.7.0"
+    },
+    "devDependencies": {
+        "wrangler": "^4.18.0"
+    },
+    "engines": {
+        "node": ">=14"
+    },
+    "keywords": [
+        "stremio",
+        "addon",
+        "french-stream"
+    ],
+    "license": "MIT"
+}

@@ -1,0 +1,10 @@
+services:
+  stremio-french-stream:
+    image: ghcr.io/aerya/stremio-french-stream-docker:latest
+    container_name: stremio-french-stream
+    restart: always
+    ports:
+      - "7000:7000"
+    environment:
+      TZ: Europe/Paris
+      PORT: 7000

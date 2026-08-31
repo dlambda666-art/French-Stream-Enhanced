@@ -1,0 +1,5 @@
+{
+    "configureUrl": "https://addon-stremio-fs-public.stremio-fs-public.workers.dev/",
+    "manifestUrl": "https://addon-stremio-fs-public.stremio-fs-public.workers.dev/manifest.json",
+    "note": "Use manifestUrl in Stremio. A static GitHub manifest would not work because Stremio resolves catalog and meta routes relative to the manifest host."
+}
