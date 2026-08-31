@@ -440,6 +440,7 @@ async function enrichSearchResults(items, config) {
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
+                    languageTag: item.languageTag,
                     description: tmdb.description, releaseInfo: tmdb.year, imdbRating: tmdb.rating,
                     genres: tmdb.genres, runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
                     behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
