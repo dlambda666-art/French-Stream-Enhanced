@@ -29,6 +29,7 @@ jobs:
 
           mkdir extracted
           unzip -q "$ZIP" -d extracted
+           find extracted -type d -name ".github" -prune -exec rm -rf {} +
 
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
