@@ -115,23 +115,8 @@ module.exports = (req, res) => {
             });
 
         return;
-    }    // Servir les badges SVG de langue
-    if (req.url.startsWith('/poster/')) {
-        const match = req.url.match(/^\/poster\/([^/]+)\/(dub|sub)\.svg$/);
-
-        if (match) {
-            const type = match[2];
-
-            res.setHeader('Content-Type', 'image/svg+xml');
-            res.setHeader('Cache-Control', 'public, max-age=86400');
-
-            const svg = type === 'dub'
-                ? `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="24" viewBox="0 0 52 24"><rect width="52" height="24" rx="6" fill="#6c5ce7"/><text x="26" y="17" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="white">DUB</text></svg>`
-                : `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="24" viewBox="0 0 52 24"><rect width="52" height="24" rx="6" fill="#00b894"/><text x="26" y="17" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="white">SUB</text></svg>`;
-
-            return res.end(svg);
-        }
-    }
+    }    
+    
 
     // ============================================================
     // ADDON AVEC OU SANS CONFIGURATION
