@@ -174,14 +174,23 @@ function cleanSearchTitle(title) {
 
 function getLanguageTag(item) {
     const text = `${item?.languageText || ''} ${item?.title || ''}`.toUpperCase();
-    const hasDub = /\bVF\b|\bFRENCH\b|\bTRUEFRENCH\b/.test(text);
-    const hasSub = /\bVOSTFR\b/.test(text);
+
+    const hasDub =
+        /\bVF\b/.test(text) ||
+        /\bFRENCH\b/.test(text) ||
+        /\bTRUEFRENCH\b/.test(text) ||
+        /\bDUB\b/.test(text);
+
+    const hasSub =
+        /\bVOSTFR\b/.test(text) ||
+        /\bSUB\b/.test(text);
+
     if (hasDub && hasSub) return 'DUB_SUB';
     if (hasDub) return 'DUB';
     if (hasSub) return 'SUB';
+
     return 'NONE';
 }
-
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
     const safeId = encodeURIComponent(imdbId);
