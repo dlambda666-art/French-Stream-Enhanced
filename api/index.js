@@ -2,10 +2,7 @@ const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey } = require('../addon');
 const path = require('path');
 const fs = require('fs');
-
-// ============================================================
-// BETTERPOSTER
-// ============================================================
+const fetch = require('node-fetch');
 
 const BETTERPOSTER_BASE =
     'https://btttr.cc/poster/imdb/poster-default/';
@@ -14,34 +11,54 @@ const POSTER_CACHE = new Map();
 const POSTER_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 // ============================================================
-// XML ESCAPE
+// POLICE PULSAR
+// ============================================================
+
+let FONT_BASE64 = '';
+
+try {
+    const fontPath = path.join(
+        __dirname,
+        '../PulsarDejaVuSans-Bold.ttf'
+    );
+
+    if (fs.existsSync(fontPath)) {
+        FONT_BASE64 = fs
+            .readFileSync(fontPath)
+            .toString('base64');
+
+        console.log('TTF chargé : PulsarDejaVuSans-Bold.ttf');
+    } else {
+        console.error('TTF introuvable :', fontPath);
+    }
+} catch (error) {
+    console.error('Erreur chargement TTF:', error.message);
+}
+
+// ============================================================
+// XML
 // ============================================================
 
 function escapeXml(value) {
     return String(value).replace(
         /[<>&"']/g,
-        char => ({
-            '<': '&lt;',
-            '>': '&gt;',
-            '&': '&amp;',
-            '"': '&quot;',
-            "'": '&apos;'
-        }[char])
+        char =>
+            ({
+                '<': '&lt;',
+                '>': '&gt;',
+                '&': '&amp;',
+                '"': '&quot;',
+                "'": '&apos;'
+            }[char])
     );
 }
 
 // ============================================================
-// SVG POSTER AVEC BADGE
+// BADGES
 // ============================================================
 
-function posterSvg(imageBase64, mime, language) {
-
-    const badge = (
-        x,
-        width,
-        label,
-        color
-    ) => `
+function badge(x, width, label, color) {
+    return `
         <rect
             x="${x}"
             y="18"
@@ -49,66 +66,59 @@ function posterSvg(imageBase64, mime, language) {
             height="54"
             rx="10"
             fill="${color}"
-            opacity="0.96"
+            opacity="0.97"
         />
-
         <text
             x="${x + width / 2}"
-            y="54"
+            y="46"
             text-anchor="middle"
             dominant-baseline="middle"
-            font-family="Arial, Helvetica, sans-serif"
-            font-size="27"
+            font-family="PulsarDejaVuSans, DejaVu Sans, sans-serif"
+            font-size="25"
             font-weight="700"
             fill="#ffffff"
         >${escapeXml(label)}</text>
     `;
+}
 
+// ============================================================
+// POSTER SVG
+// ============================================================
+
+function posterSvg(imageBase64, mime, tag) {
     let badges = '';
 
-    if (language === 'DUB') {
-
-        badges = badge(
-            18,
-            105,
-            'DUB',
-            '#1976d2'
-        );
-
-    } else if (language === 'SUB') {
-
-        badges = badge(
-            18,
-            105,
-            'SUB',
-            '#d62828'
-        );
-
-    } else if (language === 'DUB_SUB') {
-
+    if (tag === 'dub') {
+        badges = badge(18, 112, 'DUB', '#1976d2');
+    } else if (tag === 'sub') {
+        badges = badge(18, 112, 'SUB', '#d62828');
+    } else if (tag === 'dub_sub') {
         badges =
-            badge(
-                18,
-                105,
-                'DUB',
-                '#1976d2'
-            ) +
-            badge(
-                133,
-                105,
-                'SUB',
-                '#d62828'
-            );
+            badge(18, 112, 'DUB', '#1976d2') +
+            badge(140, 150, 'SUB', '#d62828');
     }
 
-    return `<?xml version="1.0" encoding="UTF-8"?>
+    const fontStyle = FONT_BASE64
+        ? `
+        @font-face {
+            font-family: 'PulsarDejaVuSans';
+            src: url(data:font/ttf;base64,${FONT_BASE64})
+                 format('truetype');
+            font-weight: 700;
+        }
+        `
+        : '';
 
+    return `<?xml version="1.0" encoding="UTF-8"?>
 <svg
     xmlns="http://www.w3.org/2000/svg"
     width="500"
     height="750"
     viewBox="0 0 500 750"
 >
+    <style>
+        ${fontStyle}
+    </style>
 
     <image
         href="data:${mime};base64,${imageBase64}"
@@ -120,42 +130,24 @@ function posterSvg(imageBase64, mime, language) {
     />
 
     ${badges}
-
 </svg>`;
 }
 
 // ============================================================
-// SERVIR L'AFFICHE BETTERPOSTER + BADGE
+// BETTERPOSTER
 // ============================================================
 
-async function serveEnhancedPoster(
-    req,
-    res,
-    imdbId,
-    language
-) {
-
-    // --------------------------------------------------------
-    // Sécurité
-    // --------------------------------------------------------
-
+async function serveEnhancedPoster(req, res, imdbId, tag) {
     if (
         !/^tt\d+$/i.test(imdbId) ||
-        !['DUB', 'SUB', 'DUB_SUB'].includes(language)
+        !['dub', 'sub', 'dub_sub'].includes(tag)
     ) {
         res.statusCode = 400;
-        res.setHeader(
-            'Content-Type',
-            'text/plain; charset=utf-8'
-        );
+        res.setHeader('Content-Type', 'text/plain');
         return res.end('Invalid poster request');
     }
 
-    // --------------------------------------------------------
-    // CACHE
-    // --------------------------------------------------------
-
-    const cacheKey = `${imdbId}:${language}`;
+    const cacheKey = `${imdbId}:${tag}`;
 
     const cached = POSTER_CACHE.get(cacheKey);
 
@@ -163,46 +155,25 @@ async function serveEnhancedPoster(
         cached &&
         cached.expires > Date.now()
     ) {
-
         res.statusCode = 200;
-
         res.setHeader(
             'Content-Type',
             'image/svg+xml; charset=utf-8'
         );
-
-        res.setHeader(
-            'Access-Control-Allow-Origin',
-            '*'
-        );
-
         res.setHeader(
             'Cache-Control',
-            'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600'
+            'public, max-age=86400, s-maxage=86400'
         );
-
         return res.end(cached.body);
     }
 
-    // --------------------------------------------------------
-    // BETTERPOSTER
-    // --------------------------------------------------------
-
     try {
-
-        const posterUrl =
-            `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg`;
-
-        console.log(
-            `French Stream POSTER ${imdbId} ${language} -> ${posterUrl}`
-        );
-
         const upstream = await fetch(
-            posterUrl,
+            `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg`,
             {
                 headers: {
                     'User-Agent':
-                        'FrenchStreamEnhanced/1.0'
+                        'Mozilla/5.0 FrenchStreamEnhanced'
                 }
             }
         );
@@ -213,66 +184,26 @@ async function serveEnhancedPoster(
             );
         }
 
-        // ----------------------------------------------------
-        // MIME
-        // ----------------------------------------------------
-
-        let mime =
+        const mime =
             upstream.headers.get('content-type') ||
             'image/jpeg';
 
-        // On ne laisse pas BetterPoster injecter
-        // un type exotique dans le SVG.
-        if (
-            !mime.startsWith('image/')
-        ) {
-            mime = 'image/jpeg';
-        }
+        const buffer = await upstream.buffer();
 
-        // ----------------------------------------------------
-        // IMAGE -> BASE64
-        // ----------------------------------------------------
-
-        const buffer = Buffer.from(
-            await upstream.arrayBuffer()
-        );
-
-        if (!buffer.length) {
-            throw new Error(
-                'BetterPoster returned an empty image'
-            );
-        }
-
-        const imageBase64 =
-            buffer.toString('base64');
-
-        // ----------------------------------------------------
-        // CREATION SVG
-        // ----------------------------------------------------
+        const base64 = buffer.toString('base64');
 
         const body = posterSvg(
-            imageBase64,
+            base64,
             mime,
-            language
+            tag
         );
 
-        // ----------------------------------------------------
-        // CACHE
-        // ----------------------------------------------------
-
-        POSTER_CACHE.set(
-            cacheKey,
-            {
-                body,
-                expires:
-                    Date.now() +
-                    POSTER_CACHE_TTL
-            }
-        );
-
-        // ----------------------------------------------------
-        // REPONSE
-        // ----------------------------------------------------
+        POSTER_CACHE.set(cacheKey, {
+            body,
+            expires:
+                Date.now() +
+                POSTER_CACHE_TTL
+        });
 
         res.statusCode = 200;
 
@@ -294,9 +225,8 @@ async function serveEnhancedPoster(
         return res.end(body);
 
     } catch (error) {
-
         console.error(
-            'French Stream BetterPoster error:',
+            'BetterPoster error:',
             error.message
         );
 
@@ -304,12 +234,7 @@ async function serveEnhancedPoster(
 
         res.setHeader(
             'Content-Type',
-            'text/plain; charset=utf-8'
-        );
-
-        res.setHeader(
-            'Cache-Control',
-            'no-store'
+            'text/plain'
         );
 
         return res.end(
@@ -324,52 +249,40 @@ async function serveEnhancedPoster(
 
 module.exports = async (req, res) => {
 
-    const parts =
-        req.url
-            .split('?')[0]
-            .split('/')
-            .filter(Boolean);
+    const parts = req.url
+        .split('?')[0]
+        .split('/')
+        .filter(Boolean);
 
     // ========================================================
-    // POSTER LANGUAGE BADGE
-    //
-    // /poster/:imdbId/:language.svg
-    //
-    // Exemple :
-    // /poster/tt0111161/dub.svg
-    // /poster/tt0111161/sub.svg
-    // /poster/tt0111161/dub_sub.svg
+    // POSTER
     // ========================================================
 
     if (
         parts.length === 3 &&
-        parts[0].toLowerCase() === 'poster' &&
-        parts[1] &&
-        parts[2]
+        parts[0] === 'poster' &&
+        /^tt\d+$/i.test(parts[1]) &&
+        parts[2].toLowerCase().endsWith('.svg')
     ) {
-
         const imdbId = parts[1];
 
-        const language =
-            parts[2]
-                .replace(/\.svg$/i, '')
-                .toUpperCase();
+        const tag = parts[2]
+            .replace(/\.svg$/i, '')
+            .toLowerCase();
 
         if (
-            /^tt\d+$/i.test(imdbId) &&
-            ['DUB', 'SUB', 'DUB_SUB'].includes(language)
+            !['dub', 'sub', 'dub_sub'].includes(tag)
         ) {
-
-            return serveEnhancedPoster(
-                req,
-                res,
-                imdbId,
-                language
-            );
+            res.statusCode = 404;
+            return res.end('Not Found');
         }
 
-        res.statusCode = 404;
-        return res.end('Not Found');
+        return serveEnhancedPoster(
+            req,
+            res,
+            imdbId,
+            tag
+        );
     }
 
     // ========================================================
@@ -380,7 +293,6 @@ module.exports = async (req, res) => {
         req.url === '/' ||
         req.url === '/configure'
     ) {
-
         res.setHeader(
             'Content-Type',
             'text/html; charset=utf-8'
@@ -403,7 +315,6 @@ module.exports = async (req, res) => {
     if (
         req.url.startsWith('/test-tmdb')
     ) {
-
         const url = new URL(
             req.url,
             `http://${req.headers.host || 'localhost'}`
@@ -420,7 +331,6 @@ module.exports = async (req, res) => {
         );
 
         try {
-
             const result =
                 await testTMDBKey(
                     url.searchParams.get('key')
@@ -429,9 +339,7 @@ module.exports = async (req, res) => {
             return res.end(
                 JSON.stringify(result)
             );
-
         } catch (error) {
-
             res.statusCode = 500;
 
             return res.end(
@@ -444,7 +352,7 @@ module.exports = async (req, res) => {
     }
 
     // ========================================================
-    // ADDON AVEC OU SANS CONFIGURATION
+    // CONFIGURATION ADDON
     // ========================================================
 
     let configStr = null;
@@ -457,29 +365,26 @@ module.exports = async (req, res) => {
             'meta'
         ].includes(parts[0])
     ) {
-
         configStr = parts[0];
 
-        req.url =
-            req.url.replace(
-                '/' + configStr,
-                ''
-            );
+        req.url = req.url.replace(
+            '/' + configStr,
+            ''
+        );
 
-        if (req.url === '') {
+        if (!req.url) {
             req.url = '/';
         }
     }
 
     // ========================================================
-    // CACHE VERCEL
+    // CACHE
     // ========================================================
 
     if (
         req.url.includes('/catalog/') ||
         req.url.includes('/meta/')
     ) {
-
         res.setHeader(
             'Cache-Control',
             'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public'
@@ -487,11 +392,18 @@ module.exports = async (req, res) => {
     }
 
     // ========================================================
-    // STREMIO ADDON ROUTER
+    // STREMIO
     // ========================================================
 
+    const publicBaseUrl =
+        process.env.PUBLIC_BASE_URL ||
+        `https://${req.headers.host}`;
+
     const addonInterface =
-        getAddonInterface(configStr);
+        getAddonInterface(
+            configStr,
+            publicBaseUrl
+        );
 
     const router =
         getRouter(addonInterface);
@@ -501,7 +413,7 @@ module.exports = async (req, res) => {
         res,
         () => {
             res.statusCode = 404;
-            res.end();
+            res.end('Not Found');
         }
     );
 };
