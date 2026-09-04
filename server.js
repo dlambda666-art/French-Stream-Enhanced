@@ -47,8 +47,8 @@ async function getTmdbPoster(imdbId, tmdbKey) {
 }
 
 async function fetchPosterImage(imdbId, tmdbKey) {
-    // Fast path: one direct artwork request by IMDb ID. This is the standard
-    // Stremio/MetaHub poster CDN and avoids the slower BetterPoster hop.
+    // Fast path: one direct artwork request by IMDb ID through MetaHub.
+    // This avoids the slower BetterPoster hop while keeping the poster pipeline intact.
     try {
         const upstream = await fetch(`https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`, {
             headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1', 'Accept': 'image/avif,image/webp,image/jpeg,image/png,image/*,*/*;q=0.8' }
@@ -65,8 +65,6 @@ async function fetchPosterImage(imdbId, tmdbKey) {
         console.warn(`TMDB/MetaHub ${imdbId} failed: ${error.message}; trying TMDB fallback`);
     }
 
-    // Rare fallback only: resolve the native TMDB poster when the fast CDN
-    // does not have the artwork.
     const tmdbPosterUrl = await getTmdbPoster(imdbId, tmdbKey);
     if (!tmdbPosterUrl) return null;
     const fallback = await fetch(tmdbPosterUrl, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
@@ -109,11 +107,15 @@ async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
     }
 }
 
+function rewriteDirectBetterPoster(body) {
+    return body.replace(/https:\/\/btttr\.cc\/poster\/imdb\/poster-default\/(tt\d+)\.jpg/gi, (_, imdbId) =>
+        `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`
+    );
+}
+
 const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
 
-    // A configured Stremio URL is /<config>/... . Strip the config prefix
-    // before testing custom routes, so prefixed poster requests reach us.
     let configStr = null;
     if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
         configStr = parts[0];
@@ -145,6 +147,22 @@ const server = http.createServer((req, res) => {
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
+
+    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
+        const originalWrite = res.write.bind(res);
+        const originalEnd = res.end.bind(res);
+        const chunks = [];
+        res.write = (chunk, encoding, callback) => {
+            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+            return true;
+        };
+        res.end = (chunk, encoding, callback) => {
+            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+            const body = rewriteDirectBetterPoster(Buffer.concat(chunks).toString('utf8'));
+            res.removeHeader('Content-Length');
+            return originalEnd(body, 'utf8', callback);
+        };
+    }
 
     router(req, res, () => {
         res.writeHead(404);
