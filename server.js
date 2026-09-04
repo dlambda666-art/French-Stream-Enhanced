@@ -6,23 +6,12 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 7000;
 
-const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
-const POSTER_CACHE = new Map();
-const POSTER_CACHE_TTL = 24 * 60 * 60 * 1000;
+const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
 
 function escapeXml(value) {
     return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
-}
-
-function posterSvg(imageBase64, mime, tag) {
-    const badge = (x, width, label, color) => `<rect x="${x}" y="18" width="${width}" height="54" rx="10" fill="${color}" opacity="0.96"/><text x="${x + width / 2}" y="54" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">${escapeXml(label)}</text>`;
-    let badges = '';
-    if (tag === 'dub') badges = badge(18, 105, 'DUB', '#1976d2');
-    else if (tag === 'sub') badges = badge(18, 105, 'SUB', '#d62828');
-    else badges = badge(18, 105, 'DUB', '#1976d2') + badge(133, 105, 'SUB', '#d62828');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="500" height="750" viewBox="0 0 500 750">\n  <image href="data:${mime};base64,${imageBase64}" x="0" y="0" width="500" height="750" preserveAspectRatio="xMidYMid slice"/>\n  ${badges}\n</svg>`;
 }
 
 function getConfigTmdbKey(configStr) {
@@ -46,71 +35,17 @@ async function getTmdbPoster(imdbId, tmdbKey) {
     return item?.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
 }
 
-async function fetchPosterImage(imdbId, tmdbKey) {
-    // Fast path: one direct artwork request by IMDb ID through MetaHub.
-    // This avoids the slower BetterPoster hop while keeping the poster pipeline intact.
-    try {
-        const upstream = await fetch(`https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`, {
-            headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1', 'Accept': 'image/avif,image/webp,image/jpeg,image/png,image/*,*/*;q=0.8' }
-        });
-        if (upstream.ok) {
-            return {
-                buffer: Buffer.from(await upstream.arrayBuffer()),
-                mime: upstream.headers.get('content-type') || 'image/jpeg',
-                source: 'TMDB/MetaHub'
-            };
-        }
-        console.warn(`TMDB/MetaHub ${imdbId} returned ${upstream.status}; trying TMDB fallback`);
-    } catch (error) {
-        console.warn(`TMDB/MetaHub ${imdbId} failed: ${error.message}; trying TMDB fallback`);
-    }
-
-    const tmdbPosterUrl = await getTmdbPoster(imdbId, tmdbKey);
-    if (!tmdbPosterUrl) return null;
-    const fallback = await fetch(tmdbPosterUrl, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-    if (!fallback.ok) throw new Error(`TMDB image ${fallback.status}`);
-    return {
-        buffer: Buffer.from(await fallback.arrayBuffer()),
-        mime: fallback.headers.get('content-type') || 'image/jpeg',
-        source: 'TMDB'
-    };
+function frenchPosterUrl(imdbId, tag) {
+    return `${FRENCH_POSTER_BASE}/poster/${encodeURIComponent(imdbId)}/${tag}.svg`;
 }
 
-async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
-    if (!/^tt\d+$/i.test(imdbId) || !['dub', 'sub', 'dub_sub'].includes(tag)) {
-        res.writeHead(400, { 'Content-Type': 'text/plain' });
-        return res.end('Invalid poster request');
-    }
-    const cacheKey = `${imdbId}:${tag}`;
-    const cached = POSTER_CACHE.get(cacheKey);
-    if (cached && cached.expires > Date.now()) {
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400, s-maxage=86400' });
-        return res.end(cached.body);
-    }
-
-    try {
-        const image = await fetchPosterImage(imdbId, tmdbKey);
-        if (!image) {
-            console.error(`No poster source found for ${imdbId}`);
-            res.writeHead(502, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
-            return res.end('Poster unavailable');
-        }
-        console.log(`Poster ${imdbId}/${tag}: ${image.source}`);
-        const body = posterSvg(image.buffer.toString('base64'), image.mime, tag);
-        POSTER_CACHE.set(cacheKey, { body, mime: 'image/svg+xml', expires: Date.now() + POSTER_CACHE_TTL });
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600' });
-        return res.end(body);
-    } catch (error) {
-        console.error(`Poster error ${imdbId}:`, error.message);
-        res.writeHead(502, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
-        return res.end('Poster unavailable');
-    }
+function nativePosterUrl(imdbId) {
+    return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
 }
 
-function rewriteDirectBetterPoster(body) {
-    return body.replace(/https:\/\/btttr\.cc\/poster\/imdb\/poster-default\/(tt\d+)\.jpg/gi, (_, imdbId) =>
-        `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`
-    );
+function rewriteBetterPosterUrls(body) {
+    return body.replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
+        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
 }
 
 const server = http.createServer((req, res) => {
@@ -124,7 +59,13 @@ const server = http.createServer((req, res) => {
 
     const posterMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
     if (posterMatch) {
-        return serveEnhancedPoster(req, res, posterMatch[1], posterMatch[2].toLowerCase(), getConfigTmdbKey(configStr));
+        const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());
+        res.writeHead(302, {
+            Location: target,
+            'Cache-Control': 'public, max-age=3600',
+            'Access-Control-Allow-Origin': '*'
+        });
+        return res.end();
     }
 
     if (req.url === '/' || req.url === '/configure') {
@@ -158,7 +99,7 @@ const server = http.createServer((req, res) => {
         };
         res.end = (chunk, encoding, callback) => {
             if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            const body = rewriteDirectBetterPoster(Buffer.concat(chunks).toString('utf8'));
+            const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
             res.removeHeader('Content-Length');
             return originalEnd(body, 'utf8', callback);
         };
