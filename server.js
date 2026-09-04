@@ -47,20 +47,26 @@ async function getTmdbPoster(imdbId, tmdbKey) {
 }
 
 async function fetchPosterImage(imdbId, tmdbKey) {
+    // Fast path: one direct artwork request by IMDb ID. This is the standard
+    // Stremio/MetaHub poster CDN and avoids the slower BetterPoster hop.
     try {
-        const upstream = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg`, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
+        const upstream = await fetch(`https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`, {
+            headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1', 'Accept': 'image/avif,image/webp,image/jpeg,image/png,image/*,*/*;q=0.8' }
+        });
         if (upstream.ok) {
             return {
                 buffer: Buffer.from(await upstream.arrayBuffer()),
                 mime: upstream.headers.get('content-type') || 'image/jpeg',
-                source: 'BetterPoster'
+                source: 'TMDB/MetaHub'
             };
         }
-        console.warn(`BetterPoster ${imdbId} returned ${upstream.status}; trying TMDB fallback`);
+        console.warn(`TMDB/MetaHub ${imdbId} returned ${upstream.status}; trying TMDB fallback`);
     } catch (error) {
-        console.warn(`BetterPoster ${imdbId} failed: ${error.message}; trying TMDB fallback`);
+        console.warn(`TMDB/MetaHub ${imdbId} failed: ${error.message}; trying TMDB fallback`);
     }
 
+    // Rare fallback only: resolve the native TMDB poster when the fast CDN
+    // does not have the artwork.
     const tmdbPosterUrl = await getTmdbPoster(imdbId, tmdbKey);
     if (!tmdbPosterUrl) return null;
     const fallback = await fetch(tmdbPosterUrl, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
