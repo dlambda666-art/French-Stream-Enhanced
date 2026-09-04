@@ -3,20 +3,29 @@ const { getAddonInterface, testTMDBKey } = require('./addon');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const fetch = require('node-fetch');
 
 const PORT = process.env.PORT || 7000;
 
 const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+
+// Cache de l'image SOURCE (partagé entre DUB/SUB/DUB+SUB)
+// + cache du SVG final par tag.
+const POSTER_SOURCE_CACHE = new Map();
+const POSTER_INFLIGHT = new Map();
 const POSTER_CACHE = new Map();
+const POSTER_SOURCE_CACHE_TTL = 24 * 60 * 60 * 1000;
 const POSTER_CACHE_TTL = 24 * 60 * 60 * 1000;
+const POSTER_MISS_TTL = 10 * 60 * 1000;
 
 function escapeXml(value) {
     return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
 }
 
 function posterSvg(imageBase64, mime, tag) {
+    // NE PAS MODIFIER : badges, taille, position et présentation verrouillés.
     const badge = (x, width, label, color) => `<rect x="${x}" y="18" width="${width}" height="54" rx="10" fill="${color}" opacity="0.96"/><text x="${x + width / 2}" y="54" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">${escapeXml(label)}</text>`;
     let badges = '';
     if (tag === 'dub') badges = badge(18, 105, 'DUB', '#1976d2');
@@ -47,29 +56,58 @@ async function getTmdbPoster(imdbId, tmdbKey) {
 }
 
 async function fetchPosterImage(imdbId, tmdbKey) {
-    try {
-        const upstream = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg`, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-        if (upstream.ok) {
-            return {
-                buffer: Buffer.from(await upstream.arrayBuffer()),
-                mime: upstream.headers.get('content-type') || 'image/jpeg',
-                source: 'BetterPoster'
-            };
-        }
-        console.warn(`BetterPoster ${imdbId} returned ${upstream.status}; trying TMDB fallback`);
-    } catch (error) {
-        console.warn(`BetterPoster ${imdbId} failed: ${error.message}; trying TMDB fallback`);
-    }
+    const cacheKey = String(imdbId).toLowerCase();
+    const cached = POSTER_SOURCE_CACHE.get(cacheKey);
+    if (cached && cached.expires > Date.now()) return cached.image;
+    if (cached) POSTER_SOURCE_CACHE.delete(cacheKey);
 
-    const tmdbPosterUrl = await getTmdbPoster(imdbId, tmdbKey);
-    if (!tmdbPosterUrl) return null;
-    const fallback = await fetch(tmdbPosterUrl, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-    if (!fallback.ok) throw new Error(`TMDB image ${fallback.status}`);
-    return {
-        buffer: Buffer.from(await fallback.arrayBuffer()),
-        mime: fallback.headers.get('content-type') || 'image/jpeg',
-        source: 'TMDB'
-    };
+    // Une seule récupération BetterPoster/TMDB en vol pour un même IMDb,
+    // même si Nuvio demande DUB et SUB presque simultanément.
+    const inflight = POSTER_INFLIGHT.get(cacheKey);
+    if (inflight) return inflight;
+
+    const promise = (async () => {
+        try {
+            try {
+                const upstream = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg`, {
+                    headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' }
+                });
+                if (upstream.ok) {
+                    const image = {
+                        buffer: Buffer.from(await upstream.arrayBuffer()),
+                        mime: upstream.headers.get('content-type') || 'image/jpeg',
+                        source: 'BetterPoster'
+                    };
+                    POSTER_SOURCE_CACHE.set(cacheKey, { image, expires: Date.now() + POSTER_SOURCE_CACHE_TTL });
+                    return image;
+                }
+                console.warn(`BetterPoster ${imdbId} returned ${upstream.status}; trying TMDB fallback`);
+            } catch (error) {
+                console.warn(`BetterPoster ${imdbId} failed: ${error.message}; trying TMDB fallback`);
+            }
+
+            const tmdbPosterUrl = await getTmdbPoster(imdbId, tmdbKey);
+            if (!tmdbPosterUrl) {
+                POSTER_SOURCE_CACHE.set(cacheKey, { image: null, expires: Date.now() + POSTER_MISS_TTL });
+                return null;
+            }
+
+            const fallback = await fetch(tmdbPosterUrl, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
+            if (!fallback.ok) throw new Error(`TMDB image ${fallback.status}`);
+            const image = {
+                buffer: Buffer.from(await fallback.arrayBuffer()),
+                mime: fallback.headers.get('content-type') || 'image/jpeg',
+                source: 'TMDB'
+            };
+            POSTER_SOURCE_CACHE.set(cacheKey, { image, expires: Date.now() + POSTER_SOURCE_CACHE_TTL });
+            return image;
+        } finally {
+            POSTER_INFLIGHT.delete(cacheKey);
+        }
+    })();
+
+    POSTER_INFLIGHT.set(cacheKey, promise);
+    return promise;
 }
 
 async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
@@ -77,12 +115,18 @@ async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
         res.writeHead(400, { 'Content-Type': 'text/plain' });
         return res.end('Invalid poster request');
     }
+
     const cacheKey = `${imdbId}:${tag}`;
     const cached = POSTER_CACHE.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400, s-maxage=86400' });
+        res.writeHead(200, {
+            'Content-Type': 'image/svg+xml',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600'
+        });
         return res.end(cached.body);
     }
+    if (cached) POSTER_CACHE.delete(cacheKey);
 
     try {
         const image = await fetchPosterImage(imdbId, tmdbKey);
@@ -91,10 +135,16 @@ async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
             res.writeHead(502, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
             return res.end('Poster unavailable');
         }
+
         console.log(`Poster ${imdbId}/${tag}: ${image.source}`);
         const body = posterSvg(image.buffer.toString('base64'), image.mime, tag);
         POSTER_CACHE.set(cacheKey, { body, mime: 'image/svg+xml', expires: Date.now() + POSTER_CACHE_TTL });
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600' });
+
+        res.writeHead(200, {
+            'Content-Type': 'image/svg+xml; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600'
+        });
         return res.end(body);
     } catch (error) {
         console.error(`Poster error ${imdbId}:`, error.message);
@@ -106,8 +156,8 @@ async function serveEnhancedPoster(req, res, imdbId, tag, tmdbKey) {
 const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
 
-    // A configured Stremio URL is /<config>/... . Strip the config prefix
-    // before testing custom routes, so prefixed poster requests reach us.
+    // Une URL Stremio configurée est /<config>/... . On retire le préfixe
+    // avant de tester les routes personnalisées afin que /poster/... soit capturé.
     let configStr = null;
     if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
         configStr = parts[0];
