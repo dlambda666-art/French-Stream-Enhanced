@@ -11,7 +11,7 @@ const POSTER_CACHE = new Map();
 const POSTER_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 function escapeXml(value) {
-    return String(value).replace(/[<>&"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
+    return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
 }
 
 function posterSvg(imageBase64, mime, tag) {
@@ -34,7 +34,7 @@ async function serveEnhancedPoster(req, res, imdbId, tag) {
     const cacheKey = `${imdbId}:${tag}`;
     const cached = POSTER_CACHE.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
-        res.writeHead(200, { 'Content-Type': cached.mime === 'image/svg+xml' ? cached.mime : 'image/svg+xml', 'Cache-Control': 'public, max-age=86400, s-maxage=86400' });
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400, s-maxage=86400' });
         return res.end(cached.body);
     }
 
@@ -58,6 +58,13 @@ async function serveEnhancedPoster(req, res, imdbId, tag) {
 const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
 
+    // A configured Stremio URL is /<config>/... . Strip the config prefix
+    // before testing custom routes, so prefixed poster requests reach us.
+    let configStr = null;
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
+        configStr = parts[0];
+        req.url = req.url.replace('/' + configStr, '') || '/';
+    }
 
     const posterMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
     if (posterMatch) {
@@ -75,12 +82,6 @@ const server = http.createServer((req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         testTMDBKey(url.searchParams.get('key')).then(result => res.end(JSON.stringify(result)));
         return;
-    }
-
-    let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta'].includes(parts[0])) {
-        configStr = parts[0];
-        req.url = req.url.replace('/' + configStr, '') || '/';
     }
 
     if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
