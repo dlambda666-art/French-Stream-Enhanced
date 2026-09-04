@@ -191,12 +191,14 @@ function getLanguageTag(item) {
 
     return 'NONE';
 }
+
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
     const safeId = encodeURIComponent(imdbId);
-    if (!languageTag || languageTag === 'NONE') return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+    // No BetterPoster at all. Tagged items still use our French Poster SVG pipeline.
+    if (!languageTag || languageTag === 'NONE') return null;
     const root = String(baseUrl || '').replace(/\/$/, '');
-    if (!root) return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+    if (!root) return null;
     return `${root}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;
 }
 
@@ -345,7 +347,7 @@ async function getCatalogItems(catalogId, config) {
     const seen = new Set();
     const allItems = [];
     pages.flat().forEach(item => {
-        // Filtrage VF si l'option est activée
+        // Filtrage VF si l’option est activée
         if (config.vfOnly && item.isVostfrOnly) return;
 
         const sTitle = catalog.type === 'series' ? cleanSeriesTitle(item.title) : item.title;
