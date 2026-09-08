@@ -1,0 +1,40 @@
+name: Deploy FS15 Catalog to Hugging Face
+
+on:
+  push:
+    branches:
+      - fs15-catalog-rebuild
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Hugging Face CLI
+        run: |
+          curl -LsSf https://hf.co/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify project
+        run: |
+          node --check addon.js
+          node --check server.js
+
+      - name: Publish Space
+        env:
+          HF_OIDC_RESOURCE: spaces/Lambda666/FS15-Catalog
+        run: |
+          hf upload Lambda666/FS15-Catalog . . \
+            --repo-type=space \
+            --exclude='.git/**' \
+            --exclude='.github/**' \
+            --delete='*' \
+            --commit-message="Deploy FS15 Catalog from ${GITHUB_SHA::7}"
