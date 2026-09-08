@@ -1,7 +1,7 @@
 ---
 title: FS15 Catalog
 emoji: 🎬
-colorFrom: orange
+colorFrom: blue
 colorTo: gray
 sdk: docker
 app_port: 7000
