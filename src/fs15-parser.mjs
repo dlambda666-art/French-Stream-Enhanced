@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 
-export const FS15_ORIGIN = 'https://fs15.lol';
+export const FS15_ORIGIN = process.env.FS15_BASE_URL || 'http://localhost:3000';
 
 function clean(value) {
     return (value || '').replace(/\s+/g, ' ').trim();
