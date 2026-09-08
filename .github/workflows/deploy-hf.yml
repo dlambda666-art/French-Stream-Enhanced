@@ -27,13 +27,22 @@ jobs:
         run: |
           node --check addon.js
           node --check server.js
+          test -f Dockerfile
+          test -f package.json
+
+      - name: Verify Hugging Face OIDC
+        env:
+          HF_OIDC_RESOURCE: spaces/Lambda666/FS15-Catalog
+        run: |
+          hf version
+          hf auth whoami
 
       - name: Publish Space
         env:
           HF_OIDC_RESOURCE: spaces/Lambda666/FS15-Catalog
         run: |
           hf upload Lambda666/FS15-Catalog . . \
-            --repo-type=space \
+            --repo-type space \
             --exclude='.git/**' \
             --exclude='.github/**' \
             --delete='*' \
