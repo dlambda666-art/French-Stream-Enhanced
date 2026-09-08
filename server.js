@@ -1,116 +1,46 @@
-const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface, testTMDBKey } = require('./addon');
+const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const http = require('http');
-const path = require('path');
-const fs = require('fs');
 
-const PORT = process.env.PORT || 7000;
+const PORT = Number(process.env.PORT || 7000);
+const ORIGIN = process.env.FS15_BASE_URL || 'https://example.invalid';
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
-const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
+const manifest = {
+  id: 'community.fs15.catalog',
+  version: '1.0.0',
+  name: 'FS15 Catalog',
+  description: 'Dynamic catalogue',
+  resources: ['catalog', 'meta'],
+  types: ['movie', 'series'],
+  idPrefixes: ['tt']
+};
 
-function escapeXml(value) {
-    return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
-}
+let parseFs15Listing;
+import('./src/fs15-parser.mjs').then(mod => { parseFs15Listing = mod.parseFs15Listing; });
 
-function getConfigTmdbKey(configStr) {
-    if (!configStr) return process.env.TMDB_API_KEY || null;
-    try {
-        const decoded = Buffer.from(configStr, 'base64').toString('utf8');
-        const config = JSON.parse(decoded);
-        return config.t || process.env.TMDB_API_KEY || null;
-    } catch {
-        return process.env.TMDB_API_KEY || null;
-    }
-}
+const builder = new addonBuilder(manifest);
+builder.defineCatalogHandler(async ({ type }) => {
+  if (!parseFs15Listing) throw new Error('FS15 parser not ready');
+  const configured = process.env[`FS15_${type.toUpperCase()}_URL`];
+  if (!configured) return { metas: [] };
+  const response = await fetch(configured, { headers: { 'User-Agent': 'FS15-Catalog/1.0' } });
+  if (!response.ok) throw new Error(`Source HTTP ${response.status}`);
+  const html = await response.text();
+  const items = parseFs15Listing(html, type, ORIGIN);
+  return { metas: items.map(item => ({
+    id: item.id, type, name: item.name, poster: item.poster,
+    releaseInfo: item.year || undefined,
+    description: item.sourceText || undefined,
+    genres: item.languageTag !== 'NONE' ? [item.languageTag] : []
+  })) };
+});
 
-async function getTmdbPoster(imdbId, tmdbKey) {
-    if (!tmdbKey) return null;
-    const url = `${TMDB_BASE}/find/${encodeURIComponent(imdbId)}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-    if (!response.ok) throw new Error(`TMDB find ${response.status}`);
-    const data = await response.json();
-    const item = [...(data.movie_results || []), ...(data.tv_results || [])].find(entry => entry.poster_path);
-    return item?.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
-}
-
-function frenchPosterUrl(imdbId, tag) {
-    return `${FRENCH_POSTER_BASE}/poster/${encodeURIComponent(imdbId)}/${tag}.svg`;
-}
-
-function nativePosterUrl(imdbId) {
-    return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
-}
-
-function rewriteBetterPosterUrls(body) {
-    return body.replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
-        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
-}
-
+const router = getRouter(builder.getInterface());
 const server = http.createServer((req, res) => {
-    const parts = req.url.split('/').filter(Boolean);
-
-    let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
-        configStr = parts[0];
-        req.url = req.url.replace('/' + configStr, '') || '/';
-    }
-
-    const posterMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
-    if (posterMatch) {
-        const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());
-        res.writeHead(302, {
-            Location: target,
-            'Cache-Control': 'public, max-age=3600',
-            'Access-Control-Allow-Origin': '*'
-        });
-        return res.end();
-    }
-
-    if (req.url === '/' || req.url === '/configure') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        return res.end(fs.readFileSync(path.join(__dirname, 'public/configure.html')));
-    }
-
-    if (req.url.startsWith('/test-tmdb')) {
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        testTMDBKey(url.searchParams.get('key')).then(result => res.end(JSON.stringify(result)));
-        return;
-    }
-
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
-        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
-    }
-
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
-    const addonInterface = getAddonInterface(configStr, publicBaseUrl);
-    const router = getRouter(addonInterface);
-
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
-        const originalWrite = res.write.bind(res);
-        const originalEnd = res.end.bind(res);
-        const chunks = [];
-        res.write = (chunk, encoding, callback) => {
-            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            return true;
-        };
-        res.end = (chunk, encoding, callback) => {
-            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
-            res.removeHeader('Content-Length');
-            return originalEnd(body, 'utf8', callback);
-        };
-    }
-
-    router(req, res, () => {
-        res.writeHead(404);
-        res.end();
-    });
+  if (req.url === '/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify(manifest));
+  }
+  router(req, res, () => { res.writeHead(404); res.end(); });
 });
 
-server.listen(PORT, () => {
-    console.log(`Addon French Stream démarré sur le port ${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => console.log(`FS15 Catalog listening on ${PORT}`));
