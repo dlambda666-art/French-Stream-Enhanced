@@ -1,6 +1,11 @@
-HS : le créateur de l'addon, que j'ai seulement passé en Docker, s'en fiche complètement et ne met plus à jour.
-https://github.com/Nikola17/addon-stremio-fs-public-render/issues/1
-
+---
+title: FS15 Catalog
+emoji: 🎬
+colorFrom: orange
+colorTo: gray
+sdk: docker
+app_port: 7000
+---
 
 # French Stream Enhanced Stremio Addon
 
@@ -32,6 +37,10 @@ Stremio utilise l'URL du manifest comme base pour appeler ensuite les routes `ca
 
 Un fichier `manifest.json` statique sur GitHub ferait donc appeler les catalogues sur GitHub Pages, qui ne peut pas executer le scraping ni les appels TMDB. Le manifest installable doit rester servi par le Worker Cloudflare.
 
-
 ## French Stream Enhanced
+
 See `README-ENHANCED.md` for the independent DUB/SUB + BetterPoster fork.
+
+## Hugging Face Space
+
+This repository can be deployed as a Docker Space. The container listens on port 7000.
