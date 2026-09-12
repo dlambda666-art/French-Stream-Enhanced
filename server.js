@@ -77,7 +77,9 @@ const server = http.createServer((req, res) => {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        testTMDBKey(url.searchParams.get('key')).then(result => res.end(JSON.stringify(result)));
+        testTMDBKey(url.searchParams.get('key'))
+            .then(result => res.end(JSON.stringify(result)))
+            .catch(error => res.end(JSON.stringify({ valid: false, error: 'test_failed', message: error?.message || 'TMDB test failed' })));
         return;
     }
 
