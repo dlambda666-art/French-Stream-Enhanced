@@ -109,7 +109,7 @@ async function fs23(url) {
 
 function extractVersion(text) {
     const value = clean(text);
-    const match = value.match(/Version\s*[:\-]\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|\s+Réalisateur\s*:|$)/i);
+    const match = value.match(/Version\s*[:\-]?\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|\s+Réalisateur\s*:|$)/i);
     return match ? clean(match[1]) : null;
 }
 
@@ -165,15 +165,7 @@ function extractDetailTitle($) {
 }
 
 function extractVersionFromDocument($) {
-    const selectors = [
-        'body',
-        'main',
-        'article',
-        '.full-text',
-        '.fullstory',
-        '.news-content',
-        '.article-content'
-    ];
+    const selectors = ['body','main','article','.full-text','.fullstory','.news-content','.article-content'];
     for (const selector of selectors) {
         const nodes = $(selector);
         for (let i = 0; i < nodes.length; i++) {
@@ -183,7 +175,7 @@ function extractVersionFromDocument($) {
         }
     }
     const html = $.html();
-    const htmlMatch = html.match(/Version\s*(?::|\\s|<[^>]+>)*([^<]{1,120}?)(?=Qualité|Date de sortie|Réalisateur|<)/i);
+    const htmlMatch = html.match(/Version\s*(?::|\s|<[^>]+>)*([^<]{1,120}?)(?=Qualité|Date de sortie|Réalisateur|<)/i);
     return htmlMatch ? clean(htmlMatch[1]) : null;
 }
 
@@ -245,14 +237,11 @@ async function searchFs23(title, type) {
         catch (e) { console.log(`[FS23] recherche "${q}": ${e.message}`); return []; }
     }));
     const seen = new Set();
-    return pages.flat()
-        .filter(x => {
-            if (seen.has(x.id)) return false;
-            seen.add(x.id);
-            return (!type || x.type === type) && scoreTitle(q, x.title) >= MIN_TITLE_SCORE;
-        })
-        .sort((a, b) => scoreTitle(q, b.title) - scoreTitle(q, a.title))
-        .slice(0, MAX_CANDIDATES);
+    return pages.flat().filter(x => {
+        if (seen.has(x.id)) return false;
+        seen.add(x.id);
+        return (!type || x.type === type) && scoreTitle(q, x.title) >= MIN_TITLE_SCORE;
+    }).sort((a, b) => scoreTitle(q, b.title) - scoreTitle(q, a.title)).slice(0, MAX_CANDIDATES);
 }
 
 async function loadType(type) {
@@ -290,10 +279,7 @@ async function refreshIndex() {
 async function getTitleFromIMDb(id) {
     for (const type of ['movie', 'series']) {
         try {
-            const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${encodeURIComponent(id)}.json`, {
-                headers: { Accept: 'application/json' },
-                signal: AbortSignal.timeout(10000)
-            });
+            const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${encodeURIComponent(id)}.json`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
             if (!r.ok) continue;
             const data = await r.json(), meta = data?.meta;
             if (meta?.name || meta?.title) return { type, title: meta.name || meta.title };
@@ -311,9 +297,7 @@ async function enrichCandidates(candidates, expectedTitle) {
             const score = scoreTitle(expectedTitle, candidate.title);
             if (score < MIN_TITLE_SCORE) continue;
             await enrich(candidate, expectedTitle);
-            if (candidate.language && candidate.detailTitle && safeTitleMatch(expectedTitle, candidate.detailTitle)) {
-                found.push({ tag: candidate.language, score, id: candidate.id, title: candidate.detailTitle, version: candidate.version });
-            }
+            if (candidate.language && candidate.detailTitle && safeTitleMatch(expectedTitle, candidate.detailTitle)) found.push({ tag: candidate.language, score, id: candidate.id, title: candidate.detailTitle, version: candidate.version });
         }
     }
     await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, candidates.length) }, worker));
@@ -328,7 +312,6 @@ async function getFs23Tag(id) {
     const cached = TAG_CACHE.get(key);
     if (cached && Date.now() - cached.time < (cached.tag ? TAG_TTL : NEGATIVE_TTL)) return cached;
     if (TAG_INFLIGHT.has(key)) return TAG_INFLIGHT.get(key);
-
     const promise = (async () => {
         const info = await getTitleFromIMDb(id);
         if (!info) {
@@ -336,37 +319,27 @@ async function getFs23Tag(id) {
             TAG_CACHE.set(key, { ...result, time: Date.now() });
             return result;
         }
-
         let candidates = FS23_INDEX ? findCandidates(info.title, info.type) : [];
         const direct = await searchFs23(info.title, info.type);
         const seen = new Set(candidates.map(x => x.id));
         for (const x of direct) if (!seen.has(x.id)) { seen.add(x.id); candidates.push(x); }
-
         let result = await enrichCandidates(candidates.slice(0, MAX_CANDIDATES), info.title);
         if (!result) {
             await refreshIndex();
             candidates = findCandidates(info.title, info.type);
             result = await enrichCandidates(candidates, info.title);
         }
-
-        const finalResult = result
-            ? { tag: result.tag, source: 'FS23', score: result.score, fs23Title: result.title, version: result.version, imdbTitle: info.title }
-            : { tag: null, source: null, reason: 'No safe FS23 Version match', imdbTitle: info.title };
-
+        const finalResult = result ? { tag: result.tag, source: 'FS23', score: result.score, fs23Title: result.title, version: result.version, imdbTitle: info.title } : { tag: null, source: null, reason: 'No safe FS23 Version match', imdbTitle: info.title };
         TAG_CACHE.set(key, { ...finalResult, time: Date.now() });
         console.log(`[FS23] ${id} "${info.title}" -> ${finalResult.tag || 'AUCUNE PREUVE'}${finalResult.version ? ` [Version: ${finalResult.version}]` : ''}`);
         return finalResult;
     })().finally(() => TAG_INFLIGHT.delete(key));
-
     TAG_INFLIGHT.set(key, promise);
     return promise;
 }
 
 async function downloadPoster(id) {
-    const r = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(id)}.jpg`, {
-        headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' },
-        signal: AbortSignal.timeout(15000)
-    });
+    const r = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(id)}.jpg`, { headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' }, signal: AbortSignal.timeout(15000) });
     if (!r.ok) throw new Error(`BetterPoster ${r.status}`);
     return Buffer.from(await r.arrayBuffer());
 }
@@ -380,34 +353,23 @@ async function buildCustomPoster(id) {
     const cached = POSTER_CACHE.get(id);
     if (cached && cached.expires > Date.now()) return cached.buffer;
     if (POSTER_INFLIGHT.has(id)) return POSTER_INFLIGHT.get(id);
-
     const promise = (async () => {
         const [poster, result] = await Promise.all([downloadPoster(id), getFs23Tag(id)]);
         const tag = result?.tag || null;
-        const output = tag
-            ? await sharp(poster).composite([{ input: badgeSvg(tag === 'vf_vostfr' ? 'VF+VOSTFR' : tag === 'vostfr' ? 'VOSTFR' : 'VF'), left: 24, top: 24 }]).jpeg({ quality: 94 }).toBuffer()
-            : await sharp(poster).jpeg({ quality: 94 }).toBuffer();
+        const output = tag ? await sharp(poster).composite([{ input: badgeSvg(tag === 'vf_vostfr' ? 'VF+VOSTFR' : tag === 'vostfr' ? 'VOSTFR' : 'VF'), left: 24, top: 24 }]).jpeg({ quality: 94 }).toBuffer() : await sharp(poster).jpeg({ quality: 94 }).toBuffer();
         POSTER_CACHE.set(id, { buffer: output, expires: Date.now() + POSTER_TTL });
         return output;
     })().finally(() => POSTER_INFLIGHT.delete(id));
-
     POSTER_INFLIGHT.set(id, promise);
     return promise;
 }
 
 async function serveCustomPoster(req, res, id) {
     const normalized = imdb(id);
-    if (!normalized) {
-        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('Invalid IMDb id');
-    }
+    if (!normalized) { res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Invalid IMDb id'); }
     try {
         const output = await buildCustomPoster(normalized);
-        res.writeHead(200, {
-            'Content-Type': 'image/jpeg',
-            'Cache-Control': 'public,max-age=86400,s-maxage=86400,stale-while-revalidate=3600',
-            'Access-Control-Allow-Origin': '*'
-        });
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public,max-age=86400,s-maxage=86400,stale-while-revalidate=3600', 'Access-Control-Allow-Origin': '*' });
         return res.end(output);
     } catch (error) {
         console.error(`[CUSTOM-POSTER] ${normalized}:`, error.message);
@@ -424,52 +386,38 @@ function serveLegacyPoster(req, res, imdbId, tag) {
 
 const server = http.createServer(async (req, res) => {
     const parts = req.url.split('/').filter(Boolean);
-
     const customMatch = req.url.match(/^\/poster\/(tt\d{7,10})\.jpg(?:\?.*)?$/i);
     if (customMatch) return serveCustomPoster(req, res, customMatch[1]);
-
     const legacyMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
     if (legacyMatch) return serveLegacyPoster(req, res, legacyMatch[1], legacyMatch[2].toLowerCase());
-
     const debugMatch = req.url.match(/^\/debug\/poster\/(tt\d{7,10})$/i);
     if (debugMatch) {
         try {
             const id = debugMatch[1].toLowerCase();
             const result = await getFs23Tag(id);
-            res.writeHead(200, {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Cache-Control': 'no-store',
-                'Access-Control-Allow-Origin': '*'
-            });
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
             return res.end(JSON.stringify({ id, ...result, index: !!FS23_INDEX, indexSize: FS23_INDEX?.items?.length || 0, indexAgeMs: FS23_INDEX ? Date.now() - FS23_INDEX_TIME : null }, null, 2));
         } catch (e) {
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             return res.end(JSON.stringify({ error: e.message }));
         }
     }
-
     if (req.url === '/' || req.url === '/configure') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(fs.readFileSync(path.join(__dirname, 'public/configure.html')));
     }
-
     if (req.url.startsWith('/test-tmdb')) {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
         return testTMDBKey(url.searchParams.get('key')).then(result => res.end(JSON.stringify(result)));
     }
-
     let configStr = null;
     if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb', 'debug'].includes(parts[0])) {
         configStr = parts[0];
         req.url = req.url.replace('/' + configStr, '') || '/';
     }
-
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
-        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
-    }
-
+    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
