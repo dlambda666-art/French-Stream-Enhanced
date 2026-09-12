@@ -11,6 +11,7 @@ const FS23_BASE = 'https://fs23.lol';
 const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
 const FS23_PAGES = 50;
 const MAX_CANDIDATES = 36;
+const MIN_TITLE_SCORE = 0.90;
 const TAG_TTL = 30 * 60 * 1000;
 const NEGATIVE_TTL = 5 * 60 * 1000;
 const POSTER_TTL = 24 * 60 * 60 * 1000;
@@ -64,6 +65,15 @@ function scoreTitle(a, b) {
     return common / Math.max(aw.size, bw.size);
 }
 
+function safeTitleMatch(expected, actual) {
+    const score = scoreTitle(expected, actual);
+    if (score >= MIN_TITLE_SCORE) return true;
+    const a = titleWords(expected);
+    const b = new Set(titleWords(actual));
+    if (a.length >= 2 && a.length === b.size && a.every(w => b.has(w))) return true;
+    return false;
+}
+
 /* FS23 Version is the ONLY language evidence. */
 function detectLanguage(value) {
     const text = clean(value).toUpperCase();
@@ -97,6 +107,12 @@ async function fs23(url) {
     throw new Error(`FS23 HTTP ${last || 503}`);
 }
 
+function extractVersion(text) {
+    const value = clean(text);
+    const match = value.match(/Version\s*[:\-]\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|\s+Réalisateur\s*:|$)/i);
+    return match ? clean(match[1]) : null;
+}
+
 function extractCard($, element, type) {
     const href = $(element).attr('href') || '';
     if (!href.includes('newsid=')) return null;
@@ -113,9 +129,8 @@ function extractCard($, element, type) {
     if (!title) return null;
     let id = '';
     try { id = new URL(url).searchParams.get('newsid') || ''; } catch { return null; }
-    const text = clean(node.text());
-    const version = text.match(/Version\s*:\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|$)/i);
-    return { id, title, type, url, language: version ? detectLanguage(version[1]) : null, normalizedTitle: normalizeTitle(title), enriched: false };
+    const version = extractVersion(node.text());
+    return { id, title, type, url, language: version ? detectLanguage(version) : null, version, normalizedTitle: normalizeTitle(title), enriched: false, detailTitle: null };
 }
 
 function parseListing(html, type) {
@@ -128,16 +143,35 @@ function parseListing(html, type) {
     return out;
 }
 
-async function enrich(item) {
+function extractDetailTitle($) {
+    const og = clean($('meta[property="og:title"]').attr('content'));
+    if (og) return og;
+    const meta = clean($('meta[name="twitter:title"]').attr('content'));
+    if (meta) return meta;
+    const title = clean($('title').first().text()).replace(/\s+streaming(?:\s+complet)?(?:\s+\d{4})?.*$/i, '');
+    if (title) return title;
+    return clean($('h1').first().text());
+}
+
+async function enrich(item, expectedTitle) {
     if (!item || item.enriched || item.language) return item;
     try {
         const $ = cheerio.load(await fs23(item.url));
+        const detailTitle = extractDetailTitle($);
+        item.detailTitle = detailTitle || null;
+        if (detailTitle && !safeTitleMatch(expectedTitle, detailTitle)) {
+            item.language = null;
+            item.enriched = true;
+            console.log(`[FS23] REJET titre: "${expectedTitle}" != "${detailTitle}"`);
+            return item;
+        }
         const body = clean($('body').text());
-        const h = clean($('h1').first().text());
-        if (h) { item.title = h; item.normalizedTitle = normalizeTitle(h); }
-        const version = body.match(/Version\s*:\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|\s+Réalisateur\s*:|$)/i) || body.match(/Version\s*[:\-]\s*([^\n\r]+)/i);
-        if (version) item.language = detectLanguage(version[1]);
-    } catch (e) { console.log(`[FS23] fiche ${item.id}: ${e.message}`); }
+        const version = extractVersion(body) || extractVersion($('body').text());
+        item.version = version;
+        if (version) item.language = detectLanguage(version);
+    } catch (e) {
+        console.log(`[FS23] fiche ${item.id}: ${e.message}`);
+    }
     item.enriched = true;
     return item;
 }
@@ -161,7 +195,7 @@ function findCandidates(title, type) {
         if (!seen.has(x.id) && (!type || x.type === type)) { seen.add(x.id); result.push(x); }
     }
     FS23_INDEX.items.map(x => ({ x, score: scoreTitle(title, x.title) }))
-        .filter(o => (!type || o.x.type === type) && o.score >= 0.55)
+        .filter(o => (!type || o.x.type === type) && o.score >= MIN_TITLE_SCORE)
         .sort((a, b) => b.score - a.score).slice(0, MAX_CANDIDATES)
         .forEach(o => { if (!seen.has(o.x.id)) { seen.add(o.x.id); result.push(o.x); } });
     return result.slice(0, MAX_CANDIDATES);
@@ -173,10 +207,19 @@ async function searchFs23(title, type) {
         `${FS23_BASE}/index.php?do=search&subaction=search&story=${encodeURIComponent(q)}`,
         `${FS23_BASE}/index.php?do=search&story=${encodeURIComponent(q)}`
     ];
-    const pages = await Promise.all(urls.map(async url => { try { return parseListing(await fs23(url), type); } catch (e) { console.log(`[FS23] recherche "${q}": ${e.message}`); return []; } }));
+    const pages = await Promise.all(urls.map(async url => {
+        try { return parseListing(await fs23(url), type); }
+        catch (e) { console.log(`[FS23] recherche "${q}": ${e.message}`); return []; }
+    }));
     const seen = new Set();
-    return pages.flat().filter(x => { if (seen.has(x.id)) return false; seen.add(x.id); return true; })
-        .sort((a, b) => scoreTitle(q, b.title) - scoreTitle(q, a.title)).slice(0, MAX_CANDIDATES);
+    return pages.flat()
+        .filter(x => {
+            if (seen.has(x.id)) return false;
+            seen.add(x.id);
+            return (!type || x.type === type) && scoreTitle(q, x.title) >= MIN_TITLE_SCORE;
+        })
+        .sort((a, b) => scoreTitle(q, b.title) - scoreTitle(q, a.title))
+        .slice(0, MAX_CANDIDATES);
 }
 
 async function loadType(type) {
@@ -188,7 +231,10 @@ async function loadType(type) {
             if (!items.length) break;
             for (const item of items) if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
             await new Promise(resolve => setTimeout(resolve, 100));
-        } catch (e) { console.log(`[FS23] ${type} page ${page}: ${e.message}`); if (/403|429/.test(e.message)) break; }
+        } catch (e) {
+            console.log(`[FS23] ${type} page ${page}: ${e.message}`);
+            if (/403|429/.test(e.message)) break;
+        }
     }
     return all;
 }
@@ -201,14 +247,20 @@ async function refreshIndex() {
         FS23_INDEX_TIME = Date.now();
         console.log(`[FS23] index prêt: ${FS23_INDEX.items.length} éléments`);
         return FS23_INDEX;
-    })().catch(e => { console.log(`[FS23] refresh: ${e.message}`); return FS23_INDEX; }).finally(() => { FS23_REFRESH = null; });
+    })().catch(e => {
+        console.log(`[FS23] refresh: ${e.message}`);
+        return FS23_INDEX;
+    }).finally(() => { FS23_REFRESH = null; });
     return FS23_REFRESH;
 }
 
 async function getTitleFromIMDb(id) {
     for (const type of ['movie', 'series']) {
         try {
-            const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${encodeURIComponent(id)}.json`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+            const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${encodeURIComponent(id)}.json`, {
+                headers: { Accept: 'application/json' },
+                signal: AbortSignal.timeout(10000)
+            });
             if (!r.ok) continue;
             const data = await r.json(), meta = data?.meta;
             if (meta?.name || meta?.title) return { type, title: meta.name || meta.title };
@@ -217,48 +269,71 @@ async function getTitleFromIMDb(id) {
     return null;
 }
 
-async function enrichCandidates(candidates) {
-    let cursor = 0; const found = [];
+async function enrichCandidates(candidates, expectedTitle) {
+    let cursor = 0;
+    const found = [];
     async function worker() {
         while (cursor < candidates.length) {
             const candidate = candidates[cursor++];
-            await enrich(candidate);
-            if (candidate.language) found.push(candidate.language);
+            const score = scoreTitle(expectedTitle, candidate.title);
+            if (score < MIN_TITLE_SCORE) continue;
+            await enrich(candidate, expectedTitle);
+            if (candidate.language && candidate.detailTitle && safeTitleMatch(expectedTitle, candidate.detailTitle)) {
+                found.push({ tag: candidate.language, score, id: candidate.id, title: candidate.detailTitle, version: candidate.version });
+            }
         }
     }
     await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, candidates.length) }, worker));
     if (!found.length) return null;
     const priority = { vf_vostfr: 4, vf: 3, vostfr: 2 };
-    return found.sort((a, b) => priority[b] - priority[a])[0] || null;
+    found.sort((a, b) => priority[b.tag] - priority[a.tag] || b.score - a.score);
+    return found[0] || null;
 }
 
 async function getFs23Tag(id) {
-    const key = id.toLowerCase(), cached = TAG_CACHE.get(key);
-    if (cached && Date.now() - cached.time < (cached.tag ? TAG_TTL : NEGATIVE_TTL)) return cached.tag;
+    const key = id.toLowerCase();
+    const cached = TAG_CACHE.get(key);
+    if (cached && Date.now() - cached.time < (cached.tag ? TAG_TTL : NEGATIVE_TTL)) return cached;
     if (TAG_INFLIGHT.has(key)) return TAG_INFLIGHT.get(key);
+
     const promise = (async () => {
         const info = await getTitleFromIMDb(id);
-        if (!info) { TAG_CACHE.set(key, { tag: null, time: Date.now() }); return null; }
+        if (!info) {
+            const result = { tag: null, source: null, reason: 'IMDb title unavailable' };
+            TAG_CACHE.set(key, { ...result, time: Date.now() });
+            return result;
+        }
+
         let candidates = FS23_INDEX ? findCandidates(info.title, info.type) : [];
         const direct = await searchFs23(info.title, info.type);
         const seen = new Set(candidates.map(x => x.id));
         for (const x of direct) if (!seen.has(x.id)) { seen.add(x.id); candidates.push(x); }
-        let tag = await enrichCandidates(candidates.slice(0, MAX_CANDIDATES));
-        if (!tag) {
+
+        let result = await enrichCandidates(candidates.slice(0, MAX_CANDIDATES), info.title);
+        if (!result) {
             await refreshIndex();
             candidates = findCandidates(info.title, info.type);
-            tag = await enrichCandidates(candidates);
+            result = await enrichCandidates(candidates, info.title);
         }
-        TAG_CACHE.set(key, { tag: tag || null, time: Date.now() });
-        console.log(`[FS23] ${id} "${info.title}" -> ${tag || 'AUCUNE PREUVE'}`);
-        return tag || null;
+
+        const finalResult = result
+            ? { tag: result.tag, source: 'FS23', score: result.score, fs23Title: result.title, version: result.version, imdbTitle: info.title }
+            : { tag: null, source: null, reason: 'No safe FS23 Version match', imdbTitle: info.title };
+
+        TAG_CACHE.set(key, { ...finalResult, time: Date.now() });
+        console.log(`[FS23] ${id} "${info.title}" -> ${finalResult.tag || 'AUCUNE PREUVE'}${finalResult.version ? ` [Version: ${finalResult.version}]` : ''}`);
+        return finalResult;
     })().finally(() => TAG_INFLIGHT.delete(key));
+
     TAG_INFLIGHT.set(key, promise);
     return promise;
 }
 
 async function downloadPoster(id) {
-    const r = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(id)}.jpg`, { headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' }, signal: AbortSignal.timeout(15000) });
+    const r = await fetch(`${BETTERPOSTER_BASE}${encodeURIComponent(id)}.jpg`, {
+        headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' },
+        signal: AbortSignal.timeout(15000)
+    });
     if (!r.ok) throw new Error(`BetterPoster ${r.status}`);
     return Buffer.from(await r.arrayBuffer());
 }
@@ -272,24 +347,34 @@ async function buildCustomPoster(id) {
     const cached = POSTER_CACHE.get(id);
     if (cached && cached.expires > Date.now()) return cached.buffer;
     if (POSTER_INFLIGHT.has(id)) return POSTER_INFLIGHT.get(id);
+
     const promise = (async () => {
-        const [poster, tag] = await Promise.all([downloadPoster(id), getFs23Tag(id)]);
+        const [poster, result] = await Promise.all([downloadPoster(id), getFs23Tag(id)]);
+        const tag = result?.tag || null;
         const output = tag
             ? await sharp(poster).composite([{ input: badgeSvg(tag === 'vf_vostfr' ? 'VF+VOSTFR' : tag === 'vostfr' ? 'VOSTFR' : 'VF'), left: 24, top: 24 }]).jpeg({ quality: 94 }).toBuffer()
             : await sharp(poster).jpeg({ quality: 94 }).toBuffer();
         POSTER_CACHE.set(id, { buffer: output, expires: Date.now() + POSTER_TTL });
         return output;
     })().finally(() => POSTER_INFLIGHT.delete(id));
+
     POSTER_INFLIGHT.set(id, promise);
     return promise;
 }
 
 async function serveCustomPoster(req, res, id) {
     const normalized = imdb(id);
-    if (!normalized) { res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Invalid IMDb id'); }
+    if (!normalized) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Invalid IMDb id');
+    }
     try {
         const output = await buildCustomPoster(normalized);
-        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public,max-age=86400,s-maxage=86400,stale-while-revalidate=3600', 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(200, {
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public,max-age=86400,s-maxage=86400,stale-while-revalidate=3600',
+            'Access-Control-Allow-Origin': '*'
+        });
         return res.end(output);
     } catch (error) {
         console.error(`[CUSTOM-POSTER] ${normalized}:`, error.message);
@@ -306,17 +391,24 @@ function serveLegacyPoster(req, res, imdbId, tag) {
 
 const server = http.createServer(async (req, res) => {
     const parts = req.url.split('/').filter(Boolean);
+
     const customMatch = req.url.match(/^\/poster\/(tt\d{7,10})\.jpg(?:\?.*)?$/i);
     if (customMatch) return serveCustomPoster(req, res, customMatch[1]);
+
     const legacyMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
     if (legacyMatch) return serveLegacyPoster(req, res, legacyMatch[1], legacyMatch[2].toLowerCase());
 
     const debugMatch = req.url.match(/^\/debug\/poster\/(tt\d{7,10})$/i);
     if (debugMatch) {
         try {
-            const id = debugMatch[1].toLowerCase(), tag = await getFs23Tag(id);
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ id, tag, source: tag ? 'FS23' : null, index: !!FS23_INDEX, indexSize: FS23_INDEX?.items?.length || 0, indexAgeMs: FS23_INDEX ? Date.now() - FS23_INDEX_TIME : null }, null, 2));
+            const id = debugMatch[1].toLowerCase();
+            const result = await getFs23Tag(id);
+            res.writeHead(200, {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(JSON.stringify({ id, ...result, index: !!FS23_INDEX, indexSize: FS23_INDEX?.items?.length || 0, indexAgeMs: FS23_INDEX ? Date.now() - FS23_INDEX_TIME : null }, null, 2));
         } catch (e) {
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             return res.end(JSON.stringify({ error: e.message }));
