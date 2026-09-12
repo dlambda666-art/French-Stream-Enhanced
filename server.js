@@ -6,7 +6,7 @@ const fs = require('fs');
 const cheerio = require('cheerio');
 const sharp = require('sharp');
 
-const PORT = process.env.PORT || 7000;
+const PORT = process.env.PORT || 7860;
 const FS23_BASE = 'https://fs23.lol';
 const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
 const FS23_PAGES = 50;
@@ -109,7 +109,7 @@ async function fs23(url) {
 
 function extractVersion(text) {
     const value = clean(text);
-    const match = value.match(/Version\s*[:\-]?\s*([^]+?)(?=\s+Qualité\s*:|\s+Date de sortie\s*:|\s+Réalisateur\s*:|$)/i);
+    const match = value.match(/\bVersion\s*[:\-]?\s*((?:VF\s*\+\s*VOSTFR|VOSTFR\s*\+\s*VF|VOST[- ]?FR|VF|VFF|VF2|TRUE\s*-?\s*FRENCH|TRUEFRENCH|FRENCH\s+(?:DUB|AUDIO)))\b/i);
     return match ? clean(match[1]) : null;
 }
 
@@ -175,7 +175,7 @@ function extractVersionFromDocument($) {
         }
     }
     const html = $.html();
-    const htmlMatch = html.match(/Version\s*(?::|\s|<[^>]+>)*([^<]{1,120}?)(?=Qualité|Date de sortie|Réalisateur|<)/i);
+    const htmlMatch = html.match(/\bVersion\s*(?::|\s|<[^>]+>)*((?:VF\s*\+\s*VOSTFR|VOSTFR\s*\+\s*VF|VOST[- ]?FR|VF|VFF|VF2|TRUE\s*-?\s*FRENCH|TRUEFRENCH|FRENCH\s+(?:DUB|AUDIO)))(?=\b|<)/i);
     return htmlMatch ? clean(htmlMatch[1]) : null;
 }
 
@@ -364,60 +364,57 @@ async function buildCustomPoster(id) {
     return promise;
 }
 
-async function serveCustomPoster(req, res, id) {
-    const normalized = imdb(id);
-    if (!normalized) { res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Invalid IMDb id'); }
-    try {
-        const output = await buildCustomPoster(normalized);
-        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public,max-age=86400,s-maxage=86400,stale-while-revalidate=3600', 'Access-Control-Allow-Origin': '*' });
-        return res.end(output);
-    } catch (error) {
-        console.error(`[CUSTOM-POSTER] ${normalized}:`, error.message);
-        res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-        return res.end(`Poster unavailable: ${error.message}`);
-    }
-}
-
-function serveLegacyPoster(req, res, imdbId, tag) {
-    const target = `https://lambda666-french-poster.hf.space/poster/${encodeURIComponent(imdbId)}/${tag}.svg`;
-    res.writeHead(302, { Location: target, 'Cache-Control': 'public,max-age=3600', 'Access-Control-Allow-Origin': '*' });
-    return res.end();
+function json(res, status, value) {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify(value));
 }
 
 const server = http.createServer(async (req, res) => {
-    const parts = req.url.split('/').filter(Boolean);
-    const customMatch = req.url.match(/^\/poster\/(tt\d{7,10})\.jpg(?:\?.*)?$/i);
-    if (customMatch) return serveCustomPoster(req, res, customMatch[1]);
-    const legacyMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
-    if (legacyMatch) return serveLegacyPoster(req, res, legacyMatch[1], legacyMatch[2].toLowerCase());
-    const debugMatch = req.url.match(/^\/debug\/poster\/(tt\d{7,10})$/i);
+    const pathOnly = (req.url || '').split('?')[0];
+    const debugMatch = pathOnly.match(/^\/debug\/poster\/(tt\d+)$/i);
     if (debugMatch) {
         try {
-            const id = debugMatch[1].toLowerCase();
-            const result = await getFs23Tag(id);
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ id, ...result, index: !!FS23_INDEX, indexSize: FS23_INDEX?.items?.length || 0, indexAgeMs: FS23_INDEX ? Date.now() - FS23_INDEX_TIME : null }, null, 2));
+            const result = await getFs23Tag(debugMatch[1]);
+            return json(res, 200, { ...result, index: !!FS23_INDEX, indexSize: FS23_INDEX?.items?.length || 0, indexAgeMs: FS23_INDEX ? Date.now() - FS23_INDEX_TIME : null });
         } catch (e) {
-            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-            return res.end(JSON.stringify({ error: e.message }));
+            return json(res, 500, { error: e.message });
         }
+    }
+    const posterMatch = pathOnly.match(/^\/poster\/(tt\d+)\.jpg$/i);
+    if (posterMatch) {
+        try {
+            const buffer = await buildCustomPoster(posterMatch[1].toLowerCase());
+            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600', 'Access-Control-Allow-Origin': '*' });
+            return res.end(buffer);
+        } catch (e) {
+            return json(res, 502, { error: e.message });
+        }
+    }
+    const legacy = pathOnly.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
+    if (legacy) {
+        res.writeHead(302, { Location: `https://lambda666-french-poster.hf.space/poster/${legacy[1].toLowerCase()}/${legacy[2].toLowerCase()}.svg` });
+        return res.end();
     }
     if (req.url === '/' || req.url === '/configure') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(fs.readFileSync(path.join(__dirname, 'public/configure.html')));
     }
     if (req.url.startsWith('/test-tmdb')) {
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost:' + PORT}`);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return testTMDBKey(url.searchParams.get('key')).then(result => res.end(JSON.stringify(result)));
+        try { const result = await testTMDBKey(url.searchParams.get('key')); res.end(JSON.stringify(result)); } catch (e) { res.end(JSON.stringify({ ok: false, error: e.message })); }
+        return;
     }
+    const parts = req.url.split('/').filter(Boolean);
     let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb', 'debug'].includes(parts[0])) {
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta'].includes(parts[0])) {
         configStr = parts[0];
         req.url = req.url.replace('/' + configStr, '') || '/';
     }
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
+    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
+        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
+    }
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
