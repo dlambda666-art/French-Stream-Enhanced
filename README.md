@@ -4,7 +4,7 @@ emoji: 🇫🇷
 colorFrom: blue
 colorTo: indigo
 sdk: docker
-app_port: 7000
+app_port: 7860
 ---
 
 HS : le créateur de l'addon, que j'ai seulement passé en Docker, s'en fiche complètement et ne met plus à jour.
@@ -44,3 +44,5 @@ Un fichier `manifest.json` statique sur GitHub ferait donc appeler les catalogue
 
 ## French Stream Enhanced
 See `README-ENHANCED.md` for the independent DUB/SUB + BetterPoster fork.
+
+<!-- HF Space Docker configuration verified -->
