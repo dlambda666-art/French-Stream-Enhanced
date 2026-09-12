@@ -1,16 +1,19 @@
 ---
 title: French Stream Enhanced
-emoji: 🇫🇷
+emoji: 🎬
 colorFrom: blue
 colorTo: indigo
 sdk: docker
 app_port: 7860
-pinned: false
-short_description: French Stream addon with enhanced posters
 ---
 
-# French Stream Enhanced
+# French Stream Enhanced Stremio Addon
 
-French Stream Stremio addon with enhanced poster support.
+Addon Stremio public pour afficher des catalogues films et series francais.
 
-This Space runs the Docker application defined by the repository Dockerfile.
+## Installation recommandee
+
+Ouvrir la page de configuration puis renseigner la cle API TMDB.
+
+## French Stream Enhanced
+Fork independant avec gestion DUB/SUB et BetterPoster.
