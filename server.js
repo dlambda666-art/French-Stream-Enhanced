@@ -1,5 +1,5 @@
 const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface, testTMDBKey } = require('./addon');
+const { getAddonInterface } = require('./addon');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -48,6 +48,37 @@ function rewriteBetterPosterUrls(body) {
         .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
 }
 
+async function validateTmdbKey(key) {
+    if (!key) return { valid: false, error: 'missing_key' };
+
+    try {
+        const response = await fetch(`${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`, {
+            headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' }
+        });
+
+        if (response.ok) return { valid: true };
+
+        let detail = '';
+        try {
+            const data = await response.json();
+            detail = data?.status_message || '';
+        } catch {}
+
+        return {
+            valid: false,
+            error: 'tmdb_rejected',
+            status: response.status,
+            message: detail || `TMDB HTTP ${response.status}`
+        };
+    } catch (error) {
+        return {
+            valid: false,
+            error: 'tmdb_unreachable',
+            message: error?.message || 'TMDB unreachable'
+        };
+    }
+}
+
 const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
 
@@ -77,7 +108,7 @@ const server = http.createServer((req, res) => {
         const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        testTMDBKey(url.searchParams.get('key'))
+        validateTmdbKey(url.searchParams.get('key'))
             .then(result => res.end(JSON.stringify(result)))
             .catch(error => res.end(JSON.stringify({ valid: false, error: 'test_failed', message: error?.message || 'TMDB test failed' })));
         return;
