@@ -5,12 +5,64 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout GitHub repository
         uses: actions/checkout@v6
+
+      - name: Broaden FS23 candidate discovery safely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('server.js')
+          s = p.read_text()
+          changed = False
+
+          if 'const FALLBACK_TITLE_SCORE = 0.45;' not in s:
+              old = 'const MIN_TITLE_SCORE = 0.90;'
+              new = old + '\nconst FALLBACK_TITLE_SCORE = 0.45;'
+              if old not in s:
+                  raise SystemExit('MIN_TITLE_SCORE not found')
+              s = s.replace(old, new, 1)
+              changed = True
+
+          old = "o.score >= MIN_TITLE_SCORE"
+          if old in s:
+              s = s.replace(old, "o.score >= FALLBACK_TITLE_SCORE")
+              changed = True
+
+          old = "scoreTitle(q, x.title) >= MIN_TITLE_SCORE"
+          if old in s:
+              s = s.replace(old, "scoreTitle(q, x.title) >= FALLBACK_TITLE_SCORE")
+              changed = True
+
+          old = "if (score < MIN_TITLE_SCORE) continue;"
+          if old in s:
+              s = s.replace(old, "if (score < FALLBACK_TITLE_SCORE) continue;", 1)
+              changed = True
+
+          if changed:
+              p.write_text(s)
+          PY
+
+      - name: Commit FS23 candidate discovery fix
+        shell: bash
+        run: |
+          if git diff --quiet -- server.js; then
+            echo "No server.js change needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js
+          git commit -m "Broaden FS23 candidate discovery safely"
+          git push
 
       - name: Sync repository to Hugging Face Space
         uses: huggingface/hub-sync@v0.1.0
