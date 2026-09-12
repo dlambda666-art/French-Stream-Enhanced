@@ -1,6 +1,5 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface } = require('./addon');
-const { buildCustomPoster, getFs23TagDebug } = require('./fs23-tags');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -51,70 +50,23 @@ function rewriteBetterPosterUrls(body) {
 
 async function validateTmdbKey(key) {
     if (!key) return { valid: false, error: 'missing_key' };
-
     try {
         const response = await fetch(`${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`, {
             headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' }
         });
-
         if (response.ok) return { valid: true };
-
         let detail = '';
-        try {
-            const data = await response.json();
-            detail = data?.status_message || '';
-        } catch {}
-
-        return {
-            valid: false,
-            error: 'tmdb_rejected',
-            status: response.status,
-            message: detail || `TMDB HTTP ${response.status}`
-        };
+        try { detail = (await response.json())?.status_message || ''; } catch {}
+        return { valid: false, error: 'tmdb_rejected', status: response.status, message: detail || `TMDB HTTP ${response.status}` };
     } catch (error) {
-        return {
-            valid: false,
-            error: 'tmdb_unreachable',
-            message: error?.message || 'TMDB unreachable'
-        };
+        return { valid: false, error: 'tmdb_unreachable', message: error?.message || 'TMDB unreachable' };
     }
 }
 
-const server = http.createServer(async (req, res) => {
-    const pathOnly = (req.url || '').split('?')[0];
-
-    const debugMatch = pathOnly.match(/^\/debug\/poster\/(tt\d+)$/i);
-    if (debugMatch) {
-        try {
-            const result = await getFs23TagDebug(debugMatch[1]);
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify(result));
-        } catch (error) {
-            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ error: error?.message || 'debug failed' }));
-        }
-    }
-
-    const customPosterMatch = pathOnly.match(/^\/poster\/(tt\d+)\.jpg$/i);
-    if (customPosterMatch) {
-        try {
-            const buffer = await buildCustomPoster(customPosterMatch[1].toLowerCase());
-            res.writeHead(200, {
-                'Content-Type': 'image/jpeg',
-                'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600',
-                'Access-Control-Allow-Origin': '*'
-            });
-            return res.end(buffer);
-        } catch (error) {
-            res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-            return res.end(JSON.stringify({ error: error?.message || 'poster failed' }));
-        }
-    }
-
+const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
-
     let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb', 'debug'].includes(parts[0])) {
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
         configStr = parts[0];
         req.url = req.url.replace('/' + configStr, '') || '/';
     }
@@ -122,11 +74,7 @@ const server = http.createServer(async (req, res) => {
     const posterMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
     if (posterMatch) {
         const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());
-        res.writeHead(302, {
-            Location: target,
-            'Cache-Control': 'public, max-age=3600',
-            'Access-Control-Allow-Origin': '*'
-        });
+        res.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
         return res.end();
     }
 
@@ -157,10 +105,7 @@ const server = http.createServer(async (req, res) => {
         const originalWrite = res.write.bind(res);
         const originalEnd = res.end.bind(res);
         const chunks = [];
-        res.write = (chunk, encoding, callback) => {
-            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            return true;
-        };
+        res.write = (chunk, encoding, callback) => { if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding)); return true; };
         res.end = (chunk, encoding, callback) => {
             if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
             const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
@@ -169,12 +114,7 @@ const server = http.createServer(async (req, res) => {
         };
     }
 
-    router(req, res, () => {
-        res.writeHead(404);
-        res.end();
-    });
+    router(req, res, () => { res.writeHead(404); res.end(); });
 });
 
-server.listen(PORT, () => {
-    console.log(`Addon French Stream démarré sur le port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Addon French Stream démarré sur le port ${PORT}`));
