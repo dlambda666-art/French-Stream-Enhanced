@@ -1,5 +1,6 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface } = require('./addon');
+const { buildCustomPoster, getFs23TagDebug } = require('./fs23-tags');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -79,11 +80,41 @@ async function validateTmdbKey(key) {
     }
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+    const pathOnly = (req.url || '').split('?')[0];
+
+    const debugMatch = pathOnly.match(/^\/debug\/poster\/(tt\d+)$/i);
+    if (debugMatch) {
+        try {
+            const result = await getFs23TagDebug(debugMatch[1]);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify(result));
+        } catch (error) {
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ error: error?.message || 'debug failed' }));
+        }
+    }
+
+    const customPosterMatch = pathOnly.match(/^\/poster\/(tt\d+)\.jpg$/i);
+    if (customPosterMatch) {
+        try {
+            const buffer = await buildCustomPoster(customPosterMatch[1].toLowerCase());
+            res.writeHead(200, {
+                'Content-Type': 'image/jpeg',
+                'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(buffer);
+        } catch (error) {
+            res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            return res.end(JSON.stringify({ error: error?.message || 'poster failed' }));
+        }
+    }
+
     const parts = req.url.split('/').filter(Boolean);
 
     let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb', 'debug'].includes(parts[0])) {
         configStr = parts[0];
         req.url = req.url.replace('/' + configStr, '') || '/';
     }
