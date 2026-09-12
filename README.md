@@ -12,4 +12,6 @@ pinned: false
 
 Stremio addon Docker pour afficher les catalogues français.
 
-Ce Space est destiné à l'auto-hébergement de l'addon.
+Ce Space est destiné à l’auto-hébergement de l’addon.
+
+<!-- sync trigger -->
