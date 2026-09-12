@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production
-ENV PORT=7000
+ENV PORT=7860
 
 WORKDIR /app
 
@@ -10,6 +10,6 @@ RUN npm install --omit=dev
 
 COPY . .
 
-EXPOSE 7000
+EXPOSE 7860
 
 CMD ["node", "server.js"]
