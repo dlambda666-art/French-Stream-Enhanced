@@ -4,108 +4,119 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
-const PORT = process.env.PORT || 7000;
-
+const PORT = Number(process.env.PORT) || 8080;
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
 
-function escapeXml(value) {
-    return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
-}
-
-function getConfigTmdbKey(configStr) {
-    if (!configStr) return process.env.TMDB_API_KEY || null;
-    try {
-        const decoded = Buffer.from(configStr, 'base64').toString('utf8');
-        const config = JSON.parse(decoded);
-        return config.t || process.env.TMDB_API_KEY || null;
-    } catch {
-        return process.env.TMDB_API_KEY || null;
-    }
-}
-
-async function getTmdbPoster(imdbId, tmdbKey) {
-    if (!tmdbKey) return null;
-    const url = `${TMDB_BASE}/find/${encodeURIComponent(imdbId)}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-    if (!response.ok) throw new Error(`TMDB find ${response.status}`);
-    const data = await response.json();
-    const item = [...(data.movie_results || []), ...(data.tv_results || [])].find(entry => entry.poster_path);
-    return item?.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
+function nativePosterUrl(imdbId) {
+    return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
 }
 
 function frenchPosterUrl(imdbId, tag) {
     return `${FRENCH_POSTER_BASE}/poster/${encodeURIComponent(imdbId)}/${tag}.svg`;
 }
 
-function nativePosterUrl(imdbId) {
-    return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
-}
-
 function rewriteBetterPosterUrls(body) {
-    return body.replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
-        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
+    return body
+        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, __, imdbId) => nativePosterUrl(imdbId))
+        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, __, imdbId) => nativePosterUrl(imdbId));
 }
 
 async function validateTmdbKey(key) {
     if (!key) return { valid: false, error: 'missing_key' };
+
     try {
-        const response = await fetch(`${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`, {
-            headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' }
-        });
+        const response = await fetch(
+            `${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`,
+            { headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' } }
+        );
+
         if (response.ok) return { valid: true };
-        let detail = '';
-        try { detail = (await response.json())?.status_message || ''; } catch {}
-        return { valid: false, error: 'tmdb_rejected', status: response.status, message: detail || `TMDB HTTP ${response.status}` };
+
+        let message = '';
+        try {
+            const data = await response.json();
+            message = data?.status_message || '';
+        } catch (_) {}
+
+        return {
+            valid: false,
+            error: 'tmdb_rejected',
+            status: response.status,
+            message: message || `TMDB HTTP ${response.status}`
+        };
     } catch (error) {
-        return { valid: false, error: 'tmdb_unreachable', message: error?.message || 'TMDB unreachable' };
+        return {
+            valid: false,
+            error: 'tmdb_unreachable',
+            message: error?.message || 'TMDB unreachable'
+        };
     }
 }
 
-const server = http.createServer((req, res) => {
-    const parts = req.url.split('/').filter(Boolean);
-    let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
-        configStr = parts[0];
-        req.url = req.url.replace('/' + configStr, '') || '/';
-    }
+function sendJson(res, status, data) {
+    const body = JSON.stringify(data);
+    res.writeHead(status, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store'
+    });
+    res.end(body);
+}
 
-    const posterMatch = req.url.match(/^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i);
-    if (posterMatch) {
-        const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());
-        res.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
+const server = http.createServer(async (req, res) => {
+    const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const pathname = requestUrl.pathname;
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        });
         return res.end();
     }
 
-    if (req.url === '/' || req.url === '/configure') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (pathname === '/health') {
+        return sendJson(res, 200, { ok: true, service: 'French Stream Enhanced' });
+    }
+
+    if (pathname === '/test-tmdb') {
+        const key = requestUrl.searchParams.get('key');
+        const result = await validateTmdbKey(key);
+        return sendJson(res, 200, result);
+    }
+
+    const parts = pathname.split('/').filter(Boolean);
+    let configStr = null;
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'health', 'test-tmdb'].includes(parts[0])) {
+        configStr = parts[0];
+        const stripped = '/' + parts.slice(1).join('/');
+        requestUrl.pathname = stripped === '/' ? '/' : stripped;
+    }
+
+    if (requestUrl.pathname === '/' || requestUrl.pathname === '/configure') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(fs.readFileSync(path.join(__dirname, 'public/configure.html')));
     }
 
-    if (req.url.startsWith('/test-tmdb')) {
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        validateTmdbKey(url.searchParams.get('key'))
-            .then(result => res.end(JSON.stringify(result)))
-            .catch(error => res.end(JSON.stringify({ valid: false, error: 'test_failed', message: error?.message || 'TMDB test failed' })));
-        return;
-    }
-
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
-        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
-    }
-
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
+    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || `localhost:${PORT}`}`;
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
+    if (requestUrl.pathname.includes('/catalog/') || requestUrl.pathname.includes('/meta/')) {
+        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
+
         const originalWrite = res.write.bind(res);
         const originalEnd = res.end.bind(res);
         const chunks = [];
-        res.write = (chunk, encoding, callback) => { if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding)); return true; };
+
+        res.write = (chunk, encoding, callback) => {
+            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+            return true;
+        };
+
         res.end = (chunk, encoding, callback) => {
             if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
             const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
@@ -114,7 +125,16 @@ const server = http.createServer((req, res) => {
         };
     }
 
-    router(req, res, () => { res.writeHead(404); res.end(); });
+    const originalUrl = req.url;
+    req.url = requestUrl.pathname + (requestUrl.search || '');
+
+    router(req, res, () => {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'not_found', path: requestUrl.pathname }));
+    });
+    req.url = originalUrl;
 });
 
-server.listen(PORT, () => console.log(`Addon French Stream démarré sur le port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Addon French Stream démarré sur le port ${PORT}`);
+});
