@@ -125,7 +125,7 @@ function extractCard($, element, type) {
         node = parent;
     }
     const img = node.find('img').first();
-    const title = clean($(element).text()) || clean(img.attr('alt')) || clean(node.find('h1,h2,h3,h4,.title').first().text());
+    const title = stripSiteSuffix(clean($(element).text()) || clean(img.attr('alt')) || clean(node.find('h1,h2,h3,h4,.title').first().text()));
     if (!title) return null;
     let id = '';
     try { id = new URL(url).searchParams.get('newsid') || ''; } catch { return null; }
