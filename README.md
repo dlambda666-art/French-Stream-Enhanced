@@ -4,7 +4,7 @@ emoji: 🇫🇷
 colorFrom: blue
 colorTo: indigo
 sdk: docker
-app_port: 7860
+app_port: 7000
 ---
 
 HS : le créateur de l'addon, que j'ai seulement passé en Docker, s'en fiche complètement et ne met plus à jour.
