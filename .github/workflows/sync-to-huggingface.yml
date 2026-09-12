@@ -5,42 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout GitHub repository
         uses: actions/checkout@v6
-
-      - name: Normalize FS23 listing titles
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('server.js')
-          s = p.read_text()
-          old = "const title = clean($(element).text()) || clean(img.attr('alt')) || clean(node.find('h1,h2,h3,h4,.title').first().text());"
-          new = "const title = stripSiteSuffix(clean($(element).text()) || clean(img.attr('alt')) || clean(node.find('h1,h2,h3,h4,.title').first().text()));"
-          if old not in s:
-              raise SystemExit('Target title line not found')
-          p.write_text(s.replace(old, new, 1))
-          PY
-
-      - name: Commit title matching fix
-        shell: bash
-        run: |
-          if git diff --quiet -- server.js; then
-            echo "No title matching change needed"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server.js
-          git commit -m "Fix FS23 listing title matching"
-          git push
 
       - name: Sync repository to Hugging Face Space
         uses: huggingface/hub-sync@v0.1.0
