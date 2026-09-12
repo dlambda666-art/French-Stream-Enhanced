@@ -4,14 +4,12 @@ emoji: 🎬
 colorFrom: blue
 colorTo: purple
 sdk: docker
-app_port: 7000
+app_port: 8080
 pinned: false
 ---
 
-# French Stream Enhanced Stremio Addon
+# French Stream Enhanced
 
-Addon Stremio public pour afficher des catalogues films et series francais.
+Stremio addon Docker pour afficher les catalogues français.
 
-## French Stream Enhanced
-
-Addon Docker deployable sur Hugging Face Spaces.
+Ce Space est destiné à l'auto-hébergement de l'addon.
