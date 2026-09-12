@@ -2,11 +2,15 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/poster/(?<imdb_id>tt\\d{7,10})\\.jpg",
+      "dest": "/api/poster/[imdb_id].js?imdb_id=$imdb_id"
+    },
     {
       "src": "/poster/(.*)",
       "dest": "/api/index.js"
