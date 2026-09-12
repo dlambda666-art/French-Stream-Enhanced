@@ -5,44 +5,12 @@ colorFrom: blue
 colorTo: indigo
 sdk: docker
 app_port: 7860
+pinned: false
+short_description: French Stream addon with enhanced posters
 ---
 
-HS : le créateur de l'addon, que j'ai seulement passé en Docker, s'en fiche complètement et ne met plus à jour.
-https://github.com/Nikola17/addon-stremio-fs-public-render/issues/1
+# French Stream Enhanced
 
+French Stream Stremio addon with enhanced poster support.
 
-# French Stream Enhanced Stremio Addon
-
-Addon Stremio public pour afficher des catalogues films et series francais.
-
-## Installation recommandee
-
-Ouvrir la page de configuration:
-
-```text
-https://addon-stremio-fs-public.stremio-fs-public.workers.dev/
-```
-
-Puis renseigner la cle API TMDB, choisir les catalogues et cliquer sur **Installer sur Stremio**.
-
-## Manifest direct
-
-Pour une installation sans configuration personnalisee, copier ce lien dans Stremio:
-
-```text
-https://addon-stremio-fs-public.stremio-fs-public.workers.dev/manifest.json
-```
-
-Ce manifest direct fonctionne sans cle TMDB, mais la configuration reste recommandee pour obtenir de meilleures affiches, descriptions et options de catalogue.
-
-## Pourquoi le manifest n'est pas heberge en statique sur GitHub
-
-Stremio utilise l'URL du manifest comme base pour appeler ensuite les routes `catalog` et `meta`.
-
-Un fichier `manifest.json` statique sur GitHub ferait donc appeler les catalogues sur GitHub Pages, qui ne peut pas executer le scraping ni les appels TMDB. Le manifest installable doit rester servi par le Worker Cloudflare.
-
-
-## French Stream Enhanced
-See `README-ENHANCED.md` for the independent DUB/SUB + BetterPoster fork.
-
-<!-- HF Space Docker configuration verified -->
+This Space runs the Docker application defined by the repository Dockerfile.
