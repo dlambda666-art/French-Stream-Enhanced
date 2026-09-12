@@ -12,6 +12,7 @@ const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
 const FS23_PAGES = 50;
 const MAX_CANDIDATES = 36;
 const MIN_TITLE_SCORE = 0.90;
+const FALLBACK_TITLE_SCORE = 0.45;
 const TAG_TTL = 30 * 60 * 1000;
 const NEGATIVE_TTL = 5 * 60 * 1000;
 const POSTER_TTL = 24 * 60 * 60 * 1000;
@@ -220,7 +221,7 @@ function findCandidates(title, type) {
         if (!seen.has(x.id) && (!type || x.type === type)) { seen.add(x.id); result.push(x); }
     }
     FS23_INDEX.items.map(x => ({ x, score: scoreTitle(title, x.title) }))
-        .filter(o => (!type || o.x.type === type) && o.score >= MIN_TITLE_SCORE)
+        .filter(o => (!type || o.x.type === type) && o.score >= FALLBACK_TITLE_SCORE)
         .sort((a, b) => b.score - a.score).slice(0, MAX_CANDIDATES)
         .forEach(o => { if (!seen.has(o.x.id)) { seen.add(o.x.id); result.push(o.x); } });
     return result.slice(0, MAX_CANDIDATES);
@@ -240,7 +241,7 @@ async function searchFs23(title, type) {
     return pages.flat().filter(x => {
         if (seen.has(x.id)) return false;
         seen.add(x.id);
-        return (!type || x.type === type) && scoreTitle(q, x.title) >= MIN_TITLE_SCORE;
+        return (!type || x.type === type) && scoreTitle(q, x.title) >= FALLBACK_TITLE_SCORE;
     }).sort((a, b) => scoreTitle(q, b.title) - scoreTitle(q, a.title)).slice(0, MAX_CANDIDATES);
 }
 
@@ -295,7 +296,7 @@ async function enrichCandidates(candidates, expectedTitle) {
         while (cursor < candidates.length) {
             const candidate = candidates[cursor++];
             const score = scoreTitle(expectedTitle, candidate.title);
-            if (score < MIN_TITLE_SCORE) continue;
+            if (score < FALLBACK_TITLE_SCORE) continue;
             await enrich(candidate, expectedTitle);
             if (candidate.language && candidate.detailTitle && safeTitleMatch(expectedTitle, candidate.detailTitle)) found.push({ tag: candidate.language, score, id: candidate.id, title: candidate.detailTitle, version: candidate.version });
         }
