@@ -4,6 +4,9 @@ on:
   push:
     branches: [clean-selfhost-rebuild]
 
+permissions:
+  contents: write
+
 jobs:
   fix:
     runs-on: ubuntu-latest
