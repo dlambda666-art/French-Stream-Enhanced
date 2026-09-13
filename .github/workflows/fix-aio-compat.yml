@@ -40,6 +40,16 @@ jobs:
           s, n = pattern.subn(lambda _m: replacement, s, count=1)
           if n != 1:
               raise SystemExit('betterPosterUrl function not found exactly once')
+
+          # BetterPoster must be the primary catalog poster. TMDB is only the fallback.
+          s, n = re.subn(
+              r"poster = tmdb\.poster \|\| betterPosterUrl\(tmdb\.imdbId, item\.languageTag, config\.posterBaseUrl\) \|\| poster;",
+              "poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;",
+              s,
+          )
+          if n < 1:
+              raise SystemExit('TMDB-first poster assignment not found')
+
           addon.write_text(s)
 
           server = Path('server.js')
@@ -58,6 +68,7 @@ jobs:
           node --check server.js
           grep -q 'https://btttr.cc/poster-qa/imdb/poster-default/' addon.js
           grep -q 'jpg?lang=fr' addon.js
+          grep -q 'betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;' addon.js
           grep -q 'return body;' server.js
 
       - name: Commit BetterPoster fix
@@ -69,7 +80,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'BetterPoster configuration already correct.'
           else
-            git commit -m 'Force exact BetterPoster URL [betterposter-fixed]'
+            git commit -m 'Force BetterPoster before TMDB fallback [betterposter-fixed]'
             git push origin clean-selfhost-rebuild
           fi
 
