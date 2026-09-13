@@ -1,4 +1,4 @@
-name: Fix catalog cache
+name: Fix catalog cache and posters
 
 on:
   push:
@@ -14,39 +14,62 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Apply catalog cache TTL
+      - name: Apply catalog cache and poster fixes
         shell: python
         run: |
           from pathlib import Path
+          import re
 
           path = Path('addon.js')
           text = path.read_text(encoding='utf-8')
+          changed = False
 
           old_get = "    if (cache.has(cacheKey)) return cache.get(cacheKey);"
           new_get = "    const cached = cache.get(cacheKey);\n    if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached.items;"
-
           old_set = "    cache.set(cacheKey, enriched);"
           new_set = "    cache.set(cacheKey, { items: enriched, cachedAt: Date.now() });"
 
-          if "cached.cachedAt" in text and "cachedAt: Date.now()" in text:
-              print('Catalog cache TTL already applied.')
-              raise SystemExit(0)
+          if old_get in text and old_set in text:
+              text = text.replace(old_get, new_get, 1).replace(old_set, new_set, 1)
+              changed = True
 
-          if old_get not in text or old_set not in text:
-              raise SystemExit('Expected catalog cache lines were not found; refusing to modify addon.js.')
+          # Never generate poster URLs for a separate/possibly unavailable poster service.
+          # TMDB poster remains the authoritative poster; scraped FS poster is the fallback.
+          old_better = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {\n    if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;\n    const safeId = encodeURIComponent(imdbId);\n    // No BetterPoster at all. Tagged items still use our French Poster SVG pipeline.\n    if (!languageTag || languageTag === 'NONE') return null;\n    const root = String(baseUrl || '').replace(/\\/$/, '');\n    if (!root) return null;\n    return `${root}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;\n}"""
+          new_better = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {\n    // Disabled: an unavailable generated-poster endpoint caused blank cards in Stremio.\n    // Posters now come directly from TMDB, with the French Stream poster as fallback.\n    return null;\n}"""
+          if old_better in text:
+              text = text.replace(old_better, new_better, 1)
+              changed = True
 
-          text = text.replace(old_get, new_get, 1).replace(old_set, new_set, 1)
+          # Read the common lazy-loading image attributes used by French Stream themes.
+          old_poster = """        let poster = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('data-original') || $(el).find('img').first().attr('data-lazy-src') || '';\n        if (poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"""
+          new_poster = """        const $img = $(el).find('img').first();\n        let poster = $img.attr('src') ||\n            $img.attr('data-src') ||\n            $img.attr('data-original') ||\n            $img.attr('data-lazy-src') ||\n            $img.attr('data-image') ||\n            $img.attr('data-lazy') ||\n            $img.attr('data-fallback-src') ||\n            '';\n        if (!poster) {\n            const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';\n            poster = srcset.split(',')[0].trim().split(/\\s+/)[0] || '';\n        }\n        if (!poster) {\n            const style = $img.attr('style') || '';\n            const match = style.match(/url\\([\\\"']?([^\\\"')]+)[\\\"']?\\)/i);\n            poster = match ? match[1] : '';\n        }\n        if (poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"""
+          if old_poster in text:
+              text = text.replace(old_poster, new_poster, 1)
+              changed = True
+
+          # Apply the same lazy-image extraction to search results.
+          old_search_poster = """        let poster = $item.find('img').first().attr('src') || '';"""
+          new_search_poster = """        const $img = $item.find('img').first();\n        let poster = $img.attr('src') ||\n            $img.attr('data-src') ||\n            $img.attr('data-original') ||\n            $img.attr('data-lazy-src') ||\n            $img.attr('data-image') ||\n            $img.attr('data-lazy') ||\n            '';\n        if (!poster) {\n            const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';\n            poster = srcset.split(',')[0].trim().split(/\\s+/)[0] || '';\n        }"""
+          if old_search_poster in text:
+              text = text.replace(old_search_poster, new_search_poster, 1)
+              changed = True
+
           path.write_text(text, encoding='utf-8')
+          print('Poster/cache patch prepared:', changed)
 
-      - name: Commit cache fix
+      - name: Validate JavaScript
+        run: node --check addon.js
+
+      - name: Commit fixes
         shell: bash
         run: |
           if git diff --quiet -- addon.js; then
-            echo "No changes to commit."
+            echo "No addon.js changes to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add addon.js
-          git commit -m "Apply catalog cache TTL [cache-fixed]"
+          git commit -m "Apply catalog cache and poster fixes [cache-fixed]"
           git push
