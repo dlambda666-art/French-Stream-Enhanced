@@ -527,8 +527,12 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     });
 
     builder.defineMetaHandler(async ({ type, id }) => {
-        if (id.startsWith('tt') || id.startsWith('tmdb:')) return { meta: null };
-        return { meta: metaCache.get(`${type}:${id}`) || null };
+        // Return the metadata cached when the catalog item was enriched.
+        // This is essential when Frankenstream is aggregated by AIO Metadata,
+        // which requests meta again using the IMDb/TMDB id.
+        const cachedMeta = metaCache.get(`${type}:${id}`);
+        if (cachedMeta) return { meta: cachedMeta };
+        return { meta: null };
     });
 
     return builder.getInterface();
