@@ -23,6 +23,45 @@ function rewriteBetterPosterUrls(body) {
         .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, __, imdbId) => nativePosterUrl(imdbId));
 }
 
+function getConfigTmdbKey(configStr) {
+    if (!configStr) return process.env.TMDB_API_KEY || null;
+    try {
+        const decoded = Buffer.from(configStr, 'base64').toString('utf8');
+        const config = JSON.parse(decoded);
+        return config.t || process.env.TMDB_API_KEY || null;
+    } catch (_) {
+        return process.env.TMDB_API_KEY || null;
+    }
+}
+
+async function fetchTmdbMeta(type, imdbId, tmdbKey) {
+    if (!tmdbKey || !/^tt\d+$/.test(imdbId)) return null;
+    try {
+        const response = await fetch(
+            `${TMDB_BASE}/find/${encodeURIComponent(imdbId)}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id&language=fr-FR`
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        const item = type === 'series' ? data.tv_results?.[0] : data.movie_results?.[0];
+        if (!item) return null;
+
+        return {
+            id: imdbId,
+            type,
+            name: item.title || item.name || imdbId,
+            poster: item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null,
+            background: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : null,
+            description: item.overview || '',
+            releaseInfo: item.release_date || item.first_air_date || '',
+            imdbRating: item.vote_average,
+            genres: []
+        };
+    } catch (error) {
+        console.error('TMDB meta error:', error?.message || error);
+        return null;
+    }
+}
+
 async function validateTmdbKey(key) {
     if (!key) return { valid: false, error: 'missing_key' };
 
@@ -102,6 +141,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || `localhost:${PORT}`}`;
+
+    // The catalog currently returns IMDb IDs (tt...) for TMDB-enriched items.
+    // Resolve those IDs directly here so Stremio receives metadata instead of null.
+    if (requestUrl.pathname.includes('/meta/')) {
+        const metaMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)\/json$/i);
+        if (metaMatch) {
+            const type = metaMatch[1].toLowerCase();
+            const imdbId = metaMatch[2];
+            const tmdbKey = getConfigTmdbKey(configStr);
+            const meta = await fetchTmdbMeta(type, imdbId, tmdbKey);
+            if (meta) return sendJson(res, 200, { meta });
+        }
+    }
+
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
