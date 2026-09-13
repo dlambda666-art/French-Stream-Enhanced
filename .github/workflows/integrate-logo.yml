@@ -21,19 +21,20 @@ jobs:
 
           addon = Path('addon.js')
           text = addon.read_text(encoding='utf-8')
-          dynamic = "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',"
+          dynamic = "logo: 'https://lambda666-frankenstream.hf.space/logo.png',"
           old_urls = [
               "logo: 'https://french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',",
-              "logo: 'https://raw.githubusercontent.com/dlambda666-art/French-Stream-Enhanced/clean-selfhost-rebuild/file_000000005400820a9793431655245097.png',"
+              "logo: 'https://raw.githubusercontent.com/dlambda666-art/French-Stream-Enhanced/clean-selfhost-rebuild/file_000000005400820a9793431655245097.png',",
+              "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',"
           ]
           changed = False
           for old in old_urls:
-              if old in text:
+              if old in text and old != dynamic:
                   text = text.replace(old, dynamic, 1)
                   changed = True
           if changed:
               addon.write_text(text, encoding='utf-8')
-              print('Logo URL wired.')
+              print('Logo URL wired to fixed Frankenstream URL.')
           elif dynamic in text:
               print('Logo URL already wired.')
           else:
