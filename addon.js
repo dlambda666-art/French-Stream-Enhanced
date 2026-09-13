@@ -206,6 +206,26 @@ function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
 // TMDB & SCRAPER
 // ============================================================================
 
+function extractPosterUrl($img) {
+    if (!$img || !$img.length) return '';
+    const attrs = ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-image', 'data-lazy', 'data-poster'];
+    for (const attr of attrs) {
+        const value = ($img.attr(attr) || '').trim();
+        if (value && !/^data:image\//i.test(value)) return value;
+    }
+    const srcset = ($img.attr('srcset') || $img.attr('data-srcset') || '').trim();
+    if (srcset) return srcset.split(',')[0].trim().split(/\s+/)[0];
+    return '';
+}
+
+function normalizePosterUrl(poster) {
+    if (!poster) return '';
+    if (poster.startsWith('//')) return 'https:' + poster;
+    if (/^https?:\/\//i.test(poster)) return poster;
+    if (poster.startsWith('/')) return 'https://french-stream.pink' + poster;
+    return 'https://french-stream.pink/' + poster;
+}
+
 function getFrenchPoster(details) {
     const posters = details.images?.posters || [];
     const frenchPoster = posters.find(poster => poster.iso_639_1 === 'fr');
@@ -291,9 +311,7 @@ async function scrapeItems(html, type) {
     $items.each((i, el) => {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
-        let poster = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('data-original') || $(el).find('img').first().attr('data-lazy-src') || '';
-        if (poster.startsWith('//')) poster = 'https:' + poster;
-        else if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;
+        let poster = normalizePosterUrl(extractPosterUrl($(el).find('img').first()));
 
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
@@ -312,7 +330,7 @@ function scrapeSearchItems(html, type) {
     $('.search-item').each((i, el) => {
         const $item = $(el);
         const title = $item.find('.search-title').first().text().trim();
-        let poster = $item.find('img').first().attr('src') || '';
+        let poster = normalizePosterUrl(extractPosterUrl($item.find('img').first()));
         const onclick = $item.attr('onclick') || '';
         const hrefMatch = onclick.match(/location\.href=['"]([^'"]+)['"]/i);
         const href = hrefMatch ? hrefMatch[1] : $item.find('a[href]').first().attr('href');
@@ -369,7 +387,7 @@ async function getCatalogItems(catalogId, config) {
             let poster = item.poster;
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
+                poster = tmdb.poster || betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
@@ -450,7 +468,7 @@ async function enrichSearchResults(items, config) {
 
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
+                poster = tmdb.poster || betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
