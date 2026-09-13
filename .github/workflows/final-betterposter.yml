@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Force BetterPoster in addon and disable server rewriting
+      - name: Force exact BetterPoster URL and disable server rewriting
         shell: bash
         run: |
           python3 - <<'PY'
@@ -25,17 +25,30 @@ jobs:
           addon = Path('addon.js')
           s = addon.read_text()
 
+          # Exact URL requested for standalone FSE.
+          s2, count = re.subn(
+              r"const BETTERPOSTER_BASE = '[^']+';",
+              "const BETTERPOSTER_BASE = 'https://btttr.cc/poster-qa/imdb/poster-default/';",
+              s,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit('BETTERPOSTER_BASE not found; refusing to modify addon.js')
+
           pattern = r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}"
           replacement = '''function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
               if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
               const safeId = encodeURIComponent(imdbId);
               return `${BETTERPOSTER_BASE}${safeId}.jpg?lang=fr`;
           }'''
-          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          s2, count = re.subn(pattern, replacement, s2, count=1, flags=re.S)
           if count != 1:
               raise SystemExit('betterPosterUrl function not found; refusing to modify addon.js')
-          if 'BETTERPOSTER_BASE' not in s2 or 'jpg?lang=fr' not in s2:
-              raise SystemExit('BetterPoster URL patch verification failed')
+
+          if 'https://btttr.cc/poster-qa/imdb/poster-default/' not in s2:
+              raise SystemExit('Exact BetterPoster base URL missing after patch')
+          if 'jpg?lang=fr' not in s2:
+              raise SystemExit('BetterPoster language suffix missing after patch')
           addon.write_text(s2)
 
           server = Path('server.js')
@@ -53,6 +66,7 @@ jobs:
 
           node --check addon.js
           node --check server.js
+          grep -q 'https://btttr.cc/poster-qa/imdb/poster-default/' addon.js
           grep -q 'jpg?lang=fr' addon.js
           grep -q 'return body;' server.js
 
@@ -62,7 +76,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add addon.js server.js
-          git commit -m 'Use BetterPoster directly in standalone addon [betterposter-fixed]'
+          git commit -m 'Use exact BetterPoster QA URL in standalone addon [betterposter-fixed]'
           git push
 
       - name: Sync final files to Frankenstream
