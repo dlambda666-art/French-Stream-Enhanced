@@ -498,7 +498,7 @@ function createManifest(config) {
         version: '0.1.0',
         name: ENHANCED_NAME,
         description: 'Version publique configurable avec recherche et nouvelles catégories.',
-        logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',
+        logo: 'https://lambda666-frankenstream.hf.space/logo.png',
         resources: ['catalog', 'meta'],
         types: ['movie', 'series'],
         idPrefixes: ['tt', 'tmdb:', 'fs:'],
