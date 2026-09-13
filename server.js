@@ -76,6 +76,34 @@ async function fetchTmdbMeta(type, imdbId, tmdbKey) {
     }
 }
 
+async function fetchTmdbIdMeta(type, tmdbId, tmdbKey) {
+    if (!tmdbKey || !/^\d+$/.test(String(tmdbId))) return null;
+    try {
+        const endpoint = type === 'series' ? 'tv' : 'movie';
+        const response = await fetch(
+            `${TMDB_BASE}/${endpoint}/${encodeURIComponent(tmdbId)}?api_key=${encodeURIComponent(tmdbKey)}&language=fr-FR`
+        );
+        if (!response.ok) return null;
+        const item = await response.json();
+        if (!item?.id) return null;
+
+        return {
+            id: `tmdb:${item.id}`,
+            type,
+            name: item.title || item.name || `tmdb:${item.id}`,
+            poster: item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null,
+            background: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : null,
+            description: item.overview || '',
+            releaseInfo: item.release_date || item.first_air_date || '',
+            imdbRating: item.vote_average,
+            genres: Array.isArray(item.genres) ? item.genres.map(g => g.name).filter(Boolean) : []
+        };
+    } catch (error) {
+        console.error('TMDB id meta error:', error?.message || error);
+        return null;
+    }
+}
+
 async function fetchCinemetaMeta(type, imdbId) {
     if (!/^tt\d+$/.test(imdbId)) return null;
     try {
@@ -188,17 +216,22 @@ const server = http.createServer(async (req, res) => {
 
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || `localhost:${PORT}`}`;
 
-    // Stremio requests metadata as /meta/{type}/{id}.json.
-    // Resolve IMDb metadata directly so AIO Metadata does not depend on the
-    // in-memory catalog cache. TMDB remains preferred, with Cinemeta as a
-    // no-key fallback when TMDB is unavailable or rejects the configured key.
+    // Resolve both IMDb and TMDB IDs directly. This is required when AIO Metadata
+    // calls Frankenstream independently of a prior catalog request.
     if (requestUrl.pathname.includes('/meta/')) {
-        const metaMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)(?:\.json)?$/i);
-        if (metaMatch) {
-            const type = metaMatch[1].toLowerCase();
-            const imdbId = metaMatch[2];
+        const imdbMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)(?:\.json)?$/i);
+        const tmdbMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/tmdb:(\d+)(?:\.json)?$/i);
+        if (imdbMatch || tmdbMatch) {
+            const type = (imdbMatch || tmdbMatch)[1].toLowerCase();
             const tmdbKey = getConfigTmdbKey(configStr);
-            const meta = await fetchTmdbMeta(type, imdbId, tmdbKey) || await fetchCinemetaMeta(type, imdbId);
+            let meta = null;
+
+            if (imdbMatch) {
+                meta = await fetchTmdbMeta(type, imdbMatch[2], tmdbKey) || await fetchCinemetaMeta(type, imdbMatch[2]);
+            } else {
+                meta = await fetchTmdbIdMeta(type, tmdbMatch[2], tmdbKey);
+            }
+
             if (meta) return sendJson(res, 200, { meta });
         }
     }
@@ -207,8 +240,6 @@ const server = http.createServer(async (req, res) => {
     const router = getRouter(addonInterface);
 
     if (requestUrl.pathname.includes('/catalog/') || requestUrl.pathname.includes('/meta/')) {
-        // Keep catalog/meta responses fresh enough for new releases while avoiding
-        // a request to the source site on every Stremio refresh.
         res.setHeader('Cache-Control', 'max-age=900, s-maxage=900, stale-while-revalidate=300, public');
 
         const originalWrite = res.write.bind(res);
