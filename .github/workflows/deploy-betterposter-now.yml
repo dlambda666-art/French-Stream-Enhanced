@@ -1,0 +1,89 @@
+name: Deploy BetterPoster now
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+    paths:
+      - .github/workflows/deploy-betterposter-now.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Patch BetterPoster without regex replacement escapes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          addon = Path('addon.js')
+          s = addon.read_text()
+
+          lines = s.splitlines(True)
+          replaced_base = False
+          for i, line in enumerate(lines):
+              if line.strip().startswith('const BETTERPOSTER_BASE ='):
+                  indent = line[:len(line) - len(line.lstrip())]
+                  lines[i] = indent + "const BETTERPOSTER_BASE = 'https://btttr.cc/poster-qa/imdb/poster-default/';\n"
+                  replaced_base = True
+                  break
+          if not replaced_base:
+              raise SystemExit('BETTERPOSTER_BASE not found')
+          s = ''.join(lines)
+
+          bp_pattern = r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}"
+          bp_replacement = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              return `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg?lang=fr`;
+          }"""
+          s, count = re.subn(bp_pattern, lambda _: bp_replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('betterPosterUrl function not found')
+          addon.write_text(s)
+
+          server = Path('server.js')
+          s = server.read_text()
+          rw_pattern = r"function rewriteBetterPosterUrls\(body\) \{.*?\n\}"
+          rw_replacement = """function rewriteBetterPosterUrls(body) {
+              return body;
+          }"""
+          s, count = re.subn(rw_pattern, lambda _: rw_replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('rewriteBetterPosterUrls function not found')
+          server.write_text(s)
+          PY
+
+          node --check addon.js
+          node --check server.js
+          grep -q "https://btttr.cc/poster-qa/imdb/poster-default/" addon.js
+          grep -q "jpg?lang=fr" addon.js
+          grep -q "return body;" server.js
+
+      - name: Commit patched addon
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js server.js
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+          else
+            git commit -m 'Deploy exact BetterPoster standalone [betterposter-deployed]'
+            git push
+          fi
+
+      - name: Sync to Frankenstream
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: Lambda666/Frankenstream
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
