@@ -13,30 +13,67 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Make meta handler AIO-compatible
+      - name: Apply compatibility and BetterPoster fixes
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
+          # Keep the AIO-compatible metadata handler if it is still on the old form.
           p = Path('addon.js')
           s = p.read_text()
           old = """    builder.defineMetaHandler(async ({ type, id }) => {\n        if (id.startsWith('tt') || id.startsWith('tmdb:')) return { meta: null };\n        return { meta: metaCache.get(`${type}:${id}`) || null };\n    });"""
           new = """    builder.defineMetaHandler(async ({ type, id }) => {\n        // Return the metadata cached when the catalog item was enriched.\n        // This is essential when Frankenstream is aggregated by AIO Metadata,\n        // which requests meta again using the IMDb/TMDB id.\n        const cachedMeta = metaCache.get(`${type}:${id}`);\n        if (cachedMeta) return { meta: cachedMeta };\n        return { meta: null };\n    });"""
-          if old not in s:
-              raise SystemExit('Expected meta handler not found; refusing to modify addon.js')
-          p.write_text(s.replace(old, new, 1))
+          if old in s:
+              s = s.replace(old, new, 1)
+
+          # Use the user's exact BetterPoster French URL directly in standalone FSE.
+          bp_pattern = r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}"
+          bp_replacement = '''function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              return `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg?lang=fr`;
+          }'''
+          s, count = re.subn(bp_pattern, bp_replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('betterPosterUrl function not found exactly once')
+          p.write_text(s)
+
+          # Do not rewrite BetterPoster URLs back to Metahub on the HTTP response.
+          sp = Path('server.js')
+          s = sp.read_text()
+          rw_pattern = r"function rewriteBetterPosterUrls\(body\) \{.*?\n\}"
+          rw_replacement = '''function rewriteBetterPosterUrls(body) {
+              // Keep BetterPoster URLs untouched so Stremio receives the configured
+              // French BetterPoster image directly.
+              return body;
+          }'''
+          s, count = re.subn(rw_pattern, rw_replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('rewriteBetterPosterUrls function not found exactly once')
+          sp.write_text(s)
           PY
           node --check addon.js
+          node --check server.js
 
       - name: Commit fix
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add addon.js
+          git add addon.js server.js
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
-            exit 0
+          else
+            git commit -m 'Enable BetterPoster standalone [betterposter-fixed]'
+            git push
           fi
-          git commit -m 'Make Frankenstream AIO-compatible [aio-fixed]'
-          git push
+
+      - name: Sync final tree to Hugging Face
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: Lambda666/Frankenstream
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
