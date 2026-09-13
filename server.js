@@ -142,10 +142,10 @@ const server = http.createServer(async (req, res) => {
 
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || `localhost:${PORT}`}`;
 
-    // The catalog currently returns IMDb IDs (tt...) for TMDB-enriched items.
-    // Resolve those IDs directly here so Stremio receives metadata instead of null.
+    // Stremio requests metadata as /meta/{type}/{id}.json.
+    // Accept the SDK's extensionless form too, so IMDb IDs are resolved reliably.
     if (requestUrl.pathname.includes('/meta/')) {
-        const metaMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)\/json$/i);
+        const metaMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)(?:\.json)?$/i);
         if (metaMatch) {
             const type = metaMatch[1].toLowerCase();
             const imdbId = metaMatch[2];
