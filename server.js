@@ -6,6 +6,7 @@ const fs = require('fs');
 const PORT = Number(process.env.PORT) || 8080;
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+const CINEMETA_BASE = 'https://v3-cinemeta.strem.io';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
 const ADDON_CACHE_RESET_MS = 15 * 60 * 1000;
 
@@ -71,6 +72,21 @@ async function fetchTmdbMeta(type, imdbId, tmdbKey) {
         };
     } catch (error) {
         console.error('TMDB meta error:', error?.message || error);
+        return null;
+    }
+}
+
+async function fetchCinemetaMeta(type, imdbId) {
+    if (!/^tt\d+$/.test(imdbId)) return null;
+    try {
+        const response = await fetch(`${CINEMETA_BASE}/meta/${type}/${encodeURIComponent(imdbId)}.json`, {
+            headers: { 'User-Agent': 'FrenchStreamEnhanced/1.0' }
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data?.meta || null;
+    } catch (error) {
+        console.error('Cinemeta meta error:', error?.message || error);
         return null;
     }
 }
@@ -173,14 +189,16 @@ const server = http.createServer(async (req, res) => {
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || `localhost:${PORT}`}`;
 
     // Stremio requests metadata as /meta/{type}/{id}.json.
-    // Accept the SDK's extensionless form too, so IMDb IDs are resolved reliably.
+    // Resolve IMDb metadata directly so AIO Metadata does not depend on the
+    // in-memory catalog cache. TMDB remains preferred, with Cinemeta as a
+    // no-key fallback when TMDB is unavailable or rejects the configured key.
     if (requestUrl.pathname.includes('/meta/')) {
         const metaMatch = requestUrl.pathname.match(/^\/meta\/(movie|series)\/(tt\d+)(?:\.json)?$/i);
         if (metaMatch) {
             const type = metaMatch[1].toLowerCase();
             const imdbId = metaMatch[2];
             const tmdbKey = getConfigTmdbKey(configStr);
-            const meta = await fetchTmdbMeta(type, imdbId, tmdbKey);
+            const meta = await fetchTmdbMeta(type, imdbId, tmdbKey) || await fetchCinemetaMeta(type, imdbId);
             if (meta) return sendJson(res, 200, { meta });
         }
     }
