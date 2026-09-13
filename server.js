@@ -1,5 +1,4 @@
 const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface } = require('./addon');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -8,6 +7,20 @@ const PORT = Number(process.env.PORT) || 8080;
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
+const ADDON_CACHE_RESET_MS = 15 * 60 * 1000;
+
+let addonModule = require('./addon');
+let addonModuleLoadedAt = Date.now();
+
+function getCurrentAddonInterface(configStr, publicBaseUrl) {
+    if (Date.now() - addonModuleLoadedAt >= ADDON_CACHE_RESET_MS) {
+        delete require.cache[require.resolve('./addon')];
+        addonModule = require('./addon');
+        addonModuleLoadedAt = Date.now();
+        console.log('Addon catalog cache reset.');
+    }
+    return addonModule.getAddonInterface(configStr, publicBaseUrl);
+}
 
 function nativePosterUrl(imdbId) {
     return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
@@ -155,7 +168,7 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    const addonInterface = getAddonInterface(configStr, publicBaseUrl);
+    const addonInterface = getCurrentAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
     if (requestUrl.pathname.includes('/catalog/') || requestUrl.pathname.includes('/meta/')) {
