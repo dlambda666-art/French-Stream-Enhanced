@@ -1,0 +1,84 @@
+name: Enable BetterPoster standalone mode
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  enable-betterposter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: clean-selfhost-rebuild
+
+      - name: Enable direct BetterPoster URLs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          addon = Path('addon.js')
+          text = addon.read_text(encoding='utf-8')
+
+          # Use the exact BetterPoster endpoint supplied for AIO Metadata.
+          text = text.replace(
+              "const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';",
+              "const BETTERPOSTER_BASE = 'https://btttr.cc/poster-qa/imdb/poster-default/';"
+          )
+
+          # Restore direct BetterPoster usage for standalone FSE.
+          pattern = re.compile(r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}", re.S)
+          replacement = '''function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              return `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg?lang=fr`;
+          }'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('betterPosterUrl function not found exactly once')
+
+          addon.write_text(text, encoding='utf-8')
+
+          server = Path('server.js')
+          text = server.read_text(encoding='utf-8')
+
+          # Do not rewrite direct BetterPoster URLs to another poster service.
+          pattern = re.compile(r"function rewriteBetterPosterUrls\(body\) \{.*?\n\}", re.S)
+          replacement = '''function rewriteBetterPosterUrls(body) {
+              return body;
+          }'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('rewriteBetterPosterUrls function not found exactly once')
+
+          server.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript
+        run: |
+          node --check addon.js
+          node --check server.js
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js server.js
+          git diff --cached --quiet && echo "No changes needed" && exit 0
+          git commit -m "Use direct BetterPoster URLs [betterposter-fixed]"
+          git push origin clean-selfhost-rebuild
+
+      - name: Sync patched code to Frankenstream
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: Lambda666/Frankenstream
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
