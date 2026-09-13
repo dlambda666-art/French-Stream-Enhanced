@@ -1,0 +1,52 @@
+name: Fix catalog cache
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[cache-fixed]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Apply catalog cache TTL
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('addon.js')
+          text = path.read_text(encoding='utf-8')
+
+          old_get = "    if (cache.has(cacheKey)) return cache.get(cacheKey);"
+          new_get = "    const cached = cache.get(cacheKey);\n    if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached.items;"
+
+          old_set = "    cache.set(cacheKey, enriched);"
+          new_set = "    cache.set(cacheKey, { items: enriched, cachedAt: Date.now() });"
+
+          if "cached.cachedAt" in text and "cachedAt: Date.now()" in text:
+              print('Catalog cache TTL already applied.')
+              raise SystemExit(0)
+
+          if old_get not in text or old_set not in text:
+              raise SystemExit('Expected catalog cache lines were not found; refusing to modify addon.js.')
+
+          text = text.replace(old_get, new_get, 1).replace(old_set, new_set, 1)
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit cache fix
+        shell: bash
+        run: |
+          if git diff --quiet -- addon.js; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js
+          git commit -m "Apply catalog cache TTL [cache-fixed]"
+          git push
