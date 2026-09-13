@@ -21,13 +21,20 @@ jobs:
 
           addon = Path('addon.js')
           text = addon.read_text(encoding='utf-8')
-          old = "logo: 'https://french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',"
-          new = "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',"
-          if old in text:
-              text = text.replace(old, new, 1)
+          dynamic = "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',"
+          old_urls = [
+              "logo: 'https://french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',",
+              "logo: 'https://raw.githubusercontent.com/dlambda666-art/French-Stream-Enhanced/clean-selfhost-rebuild/file_000000005400820a9793431655245097.png',"
+          ]
+          changed = False
+          for old in old_urls:
+              if old in text:
+                  text = text.replace(old, dynamic, 1)
+                  changed = True
+          if changed:
               addon.write_text(text, encoding='utf-8')
               print('Logo URL wired.')
-          elif "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : ''," in text:
+          elif dynamic in text:
               print('Logo URL already wired.')
           else:
               raise SystemExit('Expected logo line not found.')
@@ -39,8 +46,8 @@ jobs:
 
           server = Path('server.js')
           text = server.read_text(encoding='utf-8')
-          marker = "const server = http.createServer((req, res) => {"
-          route = """const server = http.createServer((req, res) => {\n    if (req.url === '/logo.png') {\n        const logoPath = path.join(__dirname, 'file_000000005400820a9793431655245097.png');\n        fs.readFile(logoPath, (err, data) => {\n            if (err) {\n                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });\n                return res.end('Logo not found');\n            }\n            res.writeHead(200, {\n                'Content-Type': 'image/png',\n                'Content-Length': data.length,\n                'Cache-Control': 'public, max-age=86400'\n            });\n            res.end(data);\n        });\n        return;\n    }"""
+          marker = "const server = http.createServer(async (req, res) => {"
+          route = """const server = http.createServer(async (req, res) => {\n    if (req.url === '/logo.png') {\n        const logoPath = path.join(__dirname, 'file_000000005400820a9793431655245097.png');\n        fs.readFile(logoPath, (err, data) => {\n            if (err) {\n                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });\n                return res.end('Logo not found');\n            }\n            res.writeHead(200, {\n                'Content-Type': 'image/png',\n                'Content-Length': data.length,\n                'Cache-Control': 'public, max-age=86400'\n            });\n            res.end(data);\n        });\n        return;\n    }\n"""
           if "req.url === '/logo.png'" not in text:
               if marker not in text:
                   raise SystemExit('Server marker not found.')
@@ -57,7 +64,7 @@ jobs:
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+users.noreply.github.com"
           git add addon.js server.js
           if git diff --cached --quiet; then
             echo "No changes to commit."
