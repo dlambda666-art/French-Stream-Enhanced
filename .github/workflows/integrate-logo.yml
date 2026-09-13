@@ -1,0 +1,67 @@
+name: Integrate Frankenstream logo
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: "!contains(github.event.head_commit.message, '[logo-fixed]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Wire uploaded logo into addon
+        shell: python
+        run: |
+          from pathlib import Path
+
+          addon = Path('addon.js')
+          text = addon.read_text(encoding='utf-8')
+          old = "logo: 'https://french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',"
+          new = "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',"
+          if old in text:
+              text = text.replace(old, new, 1)
+              addon.write_text(text, encoding='utf-8')
+              print('Logo URL wired.')
+          elif "logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : ''," in text:
+              print('Logo URL already wired.')
+          else:
+              raise SystemExit('Expected logo line not found.')
+
+      - name: Add logo endpoint
+        shell: python
+        run: |
+          from pathlib import Path
+
+          server = Path('server.js')
+          text = server.read_text(encoding='utf-8')
+          marker = "const server = http.createServer((req, res) => {"
+          route = """const server = http.createServer((req, res) => {\n    if (req.url === '/logo.png') {\n        const logoPath = path.join(__dirname, 'file_000000005400820a9793431655245097.png');\n        fs.readFile(logoPath, (err, data) => {\n            if (err) {\n                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });\n                return res.end('Logo not found');\n            }\n            res.writeHead(200, {\n                'Content-Type': 'image/png',\n                'Content-Length': data.length,\n                'Cache-Control': 'public, max-age=86400'\n            });\n            res.end(data);\n        });\n        return;\n    }"""
+          if "req.url === '/logo.png'" not in text:
+              if marker not in text:
+                  raise SystemExit('Server marker not found.')
+              text = text.replace(marker, route, 1)
+              server.write_text(text, encoding='utf-8')
+              print('Logo endpoint added.')
+          else:
+              print('Logo endpoint already present.')
+
+      - name: Validate JavaScript
+        run: node --check addon.js && node --check server.js
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js server.js
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Integrate Frankenstream logo [logo-fixed]"
+          git push
