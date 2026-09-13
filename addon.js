@@ -382,7 +382,7 @@ async function getCatalogItems(catalogId, config) {
             let poster = item.poster;
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = tmdb.poster || betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || poster;
+                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
@@ -463,7 +463,7 @@ async function enrichSearchResults(items, config) {
 
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = tmdb.poster || betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || poster;
+                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
