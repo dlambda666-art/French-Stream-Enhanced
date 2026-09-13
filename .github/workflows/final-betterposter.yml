@@ -1,0 +1,75 @@
+name: Final BetterPoster standalone fix
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+    paths:
+      - .github/workflows/final-betterposter.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Force BetterPoster in addon and disable server rewriting
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          addon = Path('addon.js')
+          s = addon.read_text()
+
+          pattern = r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}"
+          replacement = '''function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              return `${BETTERPOSTER_BASE}${safeId}.jpg?lang=fr`;
+          }'''
+          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('betterPosterUrl function not found; refusing to modify addon.js')
+          if 'BETTERPOSTER_BASE' not in s2 or 'jpg?lang=fr' not in s2:
+              raise SystemExit('BetterPoster URL patch verification failed')
+          addon.write_text(s2)
+
+          server = Path('server.js')
+          s = server.read_text()
+          pattern = r"function rewriteBetterPosterUrls\(body\) \{.*?\n\}"
+          replacement = '''function rewriteBetterPosterUrls(body) {
+              // Keep BetterPoster URLs exactly as returned by the addon.
+              return body;
+          }'''
+          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit('rewriteBetterPosterUrls function not found; refusing to modify server.js')
+          server.write_text(s2)
+          PY
+
+          node --check addon.js
+          node --check server.js
+          grep -q 'jpg?lang=fr' addon.js
+          grep -q 'return body;' server.js
+
+      - name: Commit patched files
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js server.js
+          git commit -m 'Use BetterPoster directly in standalone addon [betterposter-fixed]'
+          git push
+
+      - name: Sync final files to Frankenstream
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: Lambda666/Frankenstream
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
