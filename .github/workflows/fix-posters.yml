@@ -1,0 +1,39 @@
+name: Fix poster extraction
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Patch lazy-loaded poster URLs
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('addon.js')
+          s = p.read_text(encoding='utf-8')
+          old = "let poster = $(el).find('img').first().attr('src') || '';"
+          new = "let poster = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('data-original') || $(el).find('img').first().attr('data-lazy-src') || '';"
+          if old not in s:
+              print('Poster extraction already patched or source line not found.')
+              raise SystemExit(0)
+          s = s.replace(old, new, 1)
+          old2 = "if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"
+          new2 = "if (poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"
+          if old2 in s:
+              s = s.replace(old2, new2, 1)
+          p.write_text(s, encoding='utf-8')
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js
+          git diff --cached --quiet || git commit -m '[posters-fixed] handle lazy-loaded poster URLs'
+          git push
