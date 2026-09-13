@@ -5,13 +5,74 @@ on:
     branches: [clean-selfhost-rebuild]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - uses: huggingface/hub-sync@v0.1.0
+      - name: Force BetterPoster directly in the deployed checkout
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          addon = Path('addon.js')
+          s = addon.read_text()
+          s, n = re.subn(
+              r"const BETTERPOSTER_BASE = '[^']+';",
+              "const BETTERPOSTER_BASE = 'https://btttr.cc/poster-qa/imdb/poster-default/';",
+              s,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit('BETTERPOSTER_BASE not found')
+
+          pattern = r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}"
+          replacement = '''function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              return `${BETTERPOSTER_BASE}${safeId}.jpg?lang=fr`;
+          }'''
+          s, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('betterPosterUrl function not found')
+          addon.write_text(s)
+
+          server = Path('server.js')
+          s = server.read_text()
+          pattern = r"function rewriteBetterPosterUrls\(body\) \{.*?\n\}"
+          replacement = '''function rewriteBetterPosterUrls(body) {
+              return body;
+          }'''
+          s, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('rewriteBetterPosterUrls function not found')
+          server.write_text(s)
+          PY
+
+          node --check addon.js
+          node --check server.js
+          grep -q 'https://btttr.cc/poster-qa/imdb/poster-default/' addon.js
+          grep -q 'jpg?lang=fr' addon.js
+          grep -q 'return body;' server.js
+
+      - name: Commit BetterPoster fix back to branch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js server.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Deploy exact BetterPoster URL [betterposter-deploy]'
+          git push
+
+      - name: Sync repository to Frankenstream
+        uses: huggingface/hub-sync@v0.1.0
         with:
           github_repo_id: ${{ github.repository }}
           huggingface_repo_id: Lambda666/Frankenstream
