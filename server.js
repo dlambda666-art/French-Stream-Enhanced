@@ -118,6 +118,23 @@ function sendJson(res, status, data) {
 }
 
 const server = http.createServer(async (req, res) => {
+    if (req.url === '/logo.png') {
+        const logoPath = path.join(__dirname, 'file_000000005400820a9793431655245097.png');
+        fs.readFile(logoPath, (err, data) => {
+            if (err) {
+                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                return res.end('Logo not found');
+            }
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Content-Length': data.length,
+                'Cache-Control': 'public, max-age=86400'
+            });
+            res.end(data);
+        });
+        return;
+    }
+
     const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = requestUrl.pathname;
 

@@ -498,7 +498,7 @@ function createManifest(config) {
         version: '0.1.0',
         name: ENHANCED_NAME,
         description: 'Version publique configurable avec recherche et nouvelles catégories.',
-        logo: 'https://raw.githubusercontent.com/dlambda666-art/French-Stream-Enhanced/clean-selfhost-rebuild/file_000000005400820a9793431655245097.png',
+        logo: config.posterBaseUrl ? `${config.posterBaseUrl}/logo.png` : '',
         resources: ['catalog', 'meta'],
         types: ['movie', 'series'],
         idPrefixes: ['tt', 'tmdb:', 'fs:'],
