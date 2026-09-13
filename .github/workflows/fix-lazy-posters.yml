@@ -1,0 +1,42 @@
+name: Fix lazy-loaded posters
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: clean-selfhost-rebuild
+
+      - name: Patch poster extraction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('addon.js')
+          s = p.read_text()
+          old = """        let poster = $(el).find('img').first().attr('src') || '';\n        if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"""
+          new = """        const $img = $(el).find('img').first();\n        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-image') || '';\n        if (!poster) {\n            const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';\n            poster = srcset.split(',')[0].trim().split(/\\s+/)[0] || '';\n        }\n        if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + (poster.startsWith('/') ? poster : '/' + poster);"""
+          if old not in s:
+              print('Poster patch already applied or target changed; nothing to do.')
+              raise SystemExit(0)
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes."
+          else
+            git add addon.js
+            git commit -m "[poster-fixed] Handle lazy-loaded poster URLs"
+            git push origin clean-selfhost-rebuild
+          fi
