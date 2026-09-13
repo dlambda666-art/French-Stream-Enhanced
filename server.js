@@ -159,7 +159,9 @@ const server = http.createServer(async (req, res) => {
     const router = getRouter(addonInterface);
 
     if (requestUrl.pathname.includes('/catalog/') || requestUrl.pathname.includes('/meta/')) {
-        res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
+        // Keep catalog/meta responses fresh enough for new releases while avoiding
+        // a request to the source site on every Stremio refresh.
+        res.setHeader('Cache-Control', 'max-age=900, s-maxage=900, stale-while-revalidate=300, public');
 
         const originalWrite = res.write.bind(res);
         const originalEnd = res.end.bind(res);
