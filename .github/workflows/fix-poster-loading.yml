@@ -1,0 +1,81 @@
+name: Fix poster loading
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[poster-fixed]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Apply poster fallback fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('addon.js')
+          text = p.read_text(encoding='utf-8')
+
+          old = "function getFrenchPoster(details) {"
+          new = """function extractPosterUrl($img) {
+              if (!$img || !$img.length) return '';
+              const attrs = ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-image', 'data-lazy', 'data-poster'];
+              for (const attr of attrs) {
+                  const value = ($img.attr(attr) || '').trim();
+                  if (value && !/^data:image\\//i.test(value)) return value;
+              }
+              const srcset = ($img.attr('srcset') || $img.attr('data-srcset') || '').trim();
+              if (srcset) return srcset.split(',')[0].trim().split(/\\s+/)[0];
+              return '';
+          }
+
+          function normalizePosterUrl(poster) {
+              if (!poster) return '';
+              if (poster.startsWith('//')) return 'https:' + poster;
+              if (/^https?:\\/\\//i.test(poster)) return poster;
+              if (poster.startsWith('/')) return 'https://french-stream.pink' + poster;
+              return 'https://french-stream.pink/' + poster;
+          }
+
+          function getFrenchPoster(details) {"""
+          if old not in text:
+              raise SystemExit('getFrenchPoster marker not found')
+          text = text.replace(old, new, 1)
+
+          old = "let poster = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || $(el).find('img').first().attr('data-original') || $(el).find('img').first().attr('data-lazy-src') || '';\n        if (poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;"
+          new = "let poster = normalizePosterUrl(extractPosterUrl($(el).find('img').first()));"
+          if old not in text:
+              raise SystemExit('catalog poster marker not found')
+          text = text.replace(old, new, 1)
+
+          old = "let poster = $item.find('img').first().attr('src') || '';"
+          new = "let poster = normalizePosterUrl(extractPosterUrl($item.find('img').first()));"
+          if old not in text:
+              raise SystemExit('search poster marker not found')
+          text = text.replace(old, new, 1)
+
+          old = "poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;"
+          new = "poster = tmdb.poster || betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || poster;"
+          if text.count(old) < 2:
+              raise SystemExit('TMDB poster markers not found twice')
+          text = text.replace(old, new)
+
+          p.write_text(text, encoding='utf-8')
+
+      - name: Commit poster fix
+        shell: bash
+        run: |
+          if git diff --quiet -- addon.js; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js
+          git commit -m "Improve poster loading and TMDB fallback [poster-fixed]"
+          git push
