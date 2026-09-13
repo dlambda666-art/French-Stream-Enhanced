@@ -333,7 +333,8 @@ function inferSearchItemType(title, href = '') {
 
 async function getCatalogItems(catalogId, config) {
     const cacheKey = `${catalogId}_${JSON.stringify(config)}`;
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached.items;
 
     const catalog = ALL_CATALOGS[catalogId];
     if (!catalog) return [];
@@ -380,7 +381,7 @@ async function getCatalogItems(catalogId, config) {
         }));
         enriched.push(...batchResults);
     }
-    cache.set(cacheKey, enriched);
+    cache.set(cacheKey, { items: enriched, cachedAt: Date.now() });
     return enriched;
 }
 
