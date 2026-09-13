@@ -32,9 +32,7 @@ function frenchPosterUrl(imdbId, tag) {
 }
 
 function rewriteBetterPosterUrls(body) {
-    return body
-        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, __, imdbId) => nativePosterUrl(imdbId))
-        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, __, imdbId) => nativePosterUrl(imdbId));
+    return body;
 }
 
 function getConfigTmdbKey(configStr) {

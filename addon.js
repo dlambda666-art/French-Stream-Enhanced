@@ -10,7 +10,7 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 heure
 const cache = new Map();
 const metaCache = new Map();
 const SEARCH_ENRICH_LIMIT = 12;
-const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
+const BETTERPOSTER_BASE = 'https://btttr.cc/poster-qa/imdb/poster-default/';
 const ENHANCED_ID = 'community.french-stream-enhanced';
 const ENHANCED_NAME = 'French Stream Enhanced';
 
@@ -193,9 +193,8 @@ function getLanguageTag(item) {
 }
 
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
-    // Disabled: an unavailable generated-poster endpoint caused blank cards in Stremio.
-    // Posters now come directly from TMDB, with the French Stream poster as fallback.
-    return null;
+    if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
+    return `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg?lang=fr`;
 }
 
 // ============================================================================
