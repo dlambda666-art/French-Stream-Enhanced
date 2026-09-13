@@ -193,13 +193,9 @@ function getLanguageTag(item) {
 }
 
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
-    if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
-    const safeId = encodeURIComponent(imdbId);
-    // No BetterPoster at all. Tagged items still use our French Poster SVG pipeline.
-    if (!languageTag || languageTag === 'NONE') return null;
-    const root = String(baseUrl || '').replace(/\/$/, '');
-    if (!root) return null;
-    return `${root}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;
+    // Disabled: an unavailable generated-poster endpoint caused blank cards in Stremio.
+    // Posters now come directly from TMDB, with the French Stream poster as fallback.
+    return null;
 }
 
 // ============================================================================
