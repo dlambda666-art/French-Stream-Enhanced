@@ -1,0 +1,39 @@
+name: Fix AIO metadata compatibility
+
+on:
+  push:
+    branches: [clean-selfhost-rebuild]
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Make meta handler AIO-compatible
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('addon.js')
+          s = p.read_text()
+          old = """    builder.defineMetaHandler(async ({ type, id }) => {\n        if (id.startsWith('tt') || id.startsWith('tmdb:')) return { meta: null };\n        return { meta: metaCache.get(`${type}:${id}`) || null };\n    });"""
+          new = """    builder.defineMetaHandler(async ({ type, id }) => {\n        // Return the metadata cached when the catalog item was enriched.\n        // This is essential when Frankenstream is aggregated by AIO Metadata,\n        // which requests meta again using the IMDb/TMDB id.\n        const cachedMeta = metaCache.get(`${type}:${id}`);\n        if (cachedMeta) return { meta: cachedMeta };\n        return { meta: null };\n    });"""
+          if old not in s:
+              raise SystemExit('Expected meta handler not found; refusing to modify addon.js')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          node --check addon.js
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Make Frankenstream AIO-compatible [aio-fixed]'
+          git push
