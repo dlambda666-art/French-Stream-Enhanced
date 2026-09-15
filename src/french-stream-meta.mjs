@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 
-const FRENCH_STREAM_ORIGIN = 'https://french-stream.pink';
+const FRENCH_STREAM_ORIGIN = 'https://maj.french-stream.pink';
 
 function cleanDescription(value) {
     return (value || '')
