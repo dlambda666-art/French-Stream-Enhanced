@@ -270,12 +270,12 @@ async function fetchPage(url) {
 
 async function fetchSearchPage(query, page = 1) {
     try {
-        const response = await fetch('https://french-stream.pink/engine/ajax/search.php', {
+        const response = await fetch('https://maj.french-stream.pink/engine/ajax/search.php', {
             method: 'POST',
             headers: {
                 'User-Agent': 'Mozilla/5.0',
-                'Referer': 'https://french-stream.pink/',
-                'Origin': 'https://french-stream.pink',
+                'Referer': 'https://maj.french-stream.pink/',
+                'Origin': 'https://maj.french-stream.pink',
                 'Content-Type': 'application/x-www-form-urlencoded'
             },
             body: `query=${encodeURIComponent(query)}&page=${page}`
@@ -292,7 +292,7 @@ async function scrapeItems(html, type) {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
         let poster = $(el).find('img').first().attr('src') || '';
-        if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;
+        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
 
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
@@ -318,7 +318,7 @@ function scrapeSearchItems(html, type) {
         const itemType = inferSearchItemType(title, href);
 
         if (!title || !href || itemType !== type) return;
-        if (poster && !poster.startsWith('http')) poster = 'https://french-stream.pink' + poster;
+        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
         const languageTag = getLanguageTag({ title, languageText: title });
         items.push({ title, poster, href, type: itemType, languageText: title, languageTag, isVostfrOnly: languageTag === 'SUB' });
     });
@@ -417,7 +417,7 @@ async function searchFrenchStream(query, type) {
         const html = await fetchSearchPage(searchQuery);
         if (html) return scrapeSearchItems(html, type);
 
-        const searchUrl = `https://french-stream.pink/index.php?do=search&subaction=search&story=${encodeURIComponent(searchQuery)}`;
+        const searchUrl = `https://maj.french-stream.pink/index.php?do=search&subaction=search&story=${encodeURIComponent(searchQuery)}`;
         const fallbackHtml = await fetchPage(searchUrl);
         return fallbackHtml ? scrapeItems(fallbackHtml, type) : [];
     }));
@@ -482,7 +482,7 @@ function createManifest(config) {
         version: '0.1.0',
         name: ENHANCED_NAME,
         description: 'Version publique configurable avec recherche et nouvelles catégories.',
-        logo: 'https://french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',
+        logo: 'https://maj.french-stream.pink/templates/flavor/dleflavour/assets/images/x325_logo.png.pagespeed.ic.hpZlJOA7lE.webp',
         resources: ['catalog', 'meta'],
         types: ['movie', 'series'],
         idPrefixes: ['tt', 'tmdb:', 'fs:'],
