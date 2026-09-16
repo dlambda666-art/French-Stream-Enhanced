@@ -44,7 +44,7 @@ jobs:
           grep -q "data-lazy-src" addon.js
           grep -q "data-lazy-src" src/worker.mjs
           grep -q "module.exports" addon.js
-          grep -q "getAddonInterface" src/worker.mjs
+          grep -q "function scrapeItems" src/worker.mjs
           echo "Poster extraction patch verified"
 
       - name: Commit repair and remove one-shot workflow
@@ -54,5 +54,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add addon.js src/worker.mjs
           git rm .github/workflows/fix-poster-v2.yml
+          git rm -f POSTER_REPAIR_TRIGGER.txt || true
           git commit -m "fix: robust lazy poster extraction"
           git push
