@@ -291,7 +291,7 @@ async function scrapeItems(html, type) {
     $items.each((i, el) => {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
-        let poster = $(el).find('img').first().attr('src') || '';
+        const $img = $(el).find('img').first();\n        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';\n        if (!poster) {\n            const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';\n            poster = srcset.split(',')[0]?.trim().split(/\\s+/)[0] || '';\n        }
         if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
 
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
