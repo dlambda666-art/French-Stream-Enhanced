@@ -1,0 +1,89 @@
+name: Final series poster repair
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Repair addon.js
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('addon.js')
+          s = p.read_text(encoding='utf-8')
+
+          old_bp = re.compile(r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}", re.S)
+          new_bp = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              // Keep BetterPoster for untagged items. Tagged items keep the French Poster badge pipeline.
+              if (!languageTag || languageTag === 'NONE') return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+              const root = String(baseUrl || '').replace(/\\/$/, '');
+              if (!root) return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+              return `${root}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;
+          }"""
+          s, n_bp = old_bp.subn(new_bp, s, count=1)
+          if n_bp != 1:
+              raise SystemExit(f'betterPosterUrl replacement failed: {n_bp} matches')
+
+          old_poster = re.compile(r"""        const \$img = \$\(el\)\.find\('img'\)\.first\(\);\n        let poster = \$img\.attr\('src'\) \|\| \$img\.attr\('data-src'\) \|\| \$img\.attr\('data-original'\) \|\| \$img\.attr\('data-lazy-src'\) \|\| \$img\.attr\('data-url'\) \|\| '';\n        if \(!poster\) \{\n            const srcset = \$img\.attr\('srcset'\) \|\| \$img\.attr\('data-srcset'\) \|\| '';\n            poster = srcset\.split\(',',\s*\)[0\]\?\.trim\(\)\.split\(/\\\\s\+\/\)\[0\] \|\| '';\n        \}\n        if \(poster && !poster\.startsWith\('http'\)\) poster = 'https://maj\.french-stream\.pink' \+ poster;""", re.S)
+
+          new_poster = """        const $img = $(el).find('img').first();
+        // French Stream lazy-loads many series posters: src can be a blank/placeholder
+        // while the real image is in data-src/data-original/data-lazy-src/srcset.
+        const posterCandidates = [
+            $img.attr('data-src'),
+            $img.attr('data-original'),
+            $img.attr('data-lazy-src'),
+            $img.attr('data-url'),
+            $img.attr('data-poster'),
+            $img.attr('data-image'),
+            $img.attr('data-srcset'),
+            $img.attr('srcset'),
+            $img.attr('src')
+        ].filter(Boolean);
+        let poster = '';
+        for (const candidate of posterCandidates) {
+            const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';
+            if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+            if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+            poster = first;
+            break;
+        }
+        if (poster.startsWith('//')) poster = 'https:' + poster;
+        else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;"""
+
+          m = old_poster.search(s)
+          if not m:
+              raise SystemExit('series poster extraction block not found')
+          s = s[:m.start()] + new_poster + s[m.end():]
+
+          p.write_text(s, encoding='utf-8')
+          print(f'Applied BetterPoster + lazy poster repair (bp={n_bp}).')
+
+      - name: Validate JavaScript
+        run: node --check addon.js
+
+      - name: Commit and remove repair workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-series-posters-final.yml
+          git add addon.js
+          git diff --cached --check
+          git diff --cached -- addon.js
+          git commit -m "fix: restore BetterPoster and prefer real lazy-loaded series posters"
+          git push
