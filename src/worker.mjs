@@ -298,7 +298,7 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
 
     if (tmdb) {
         const id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-        const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;
+        const poster = tmdb.poster || item.poster;
 
         meta = {
             id,
