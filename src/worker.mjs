@@ -260,8 +260,8 @@ async function getCatalogItems(catalogId, config, ctx) {
     const catalog = ALL_CATALOGS[catalogId];
     if (!catalog) return [];
 
-    const pagePromises = Array.from({ length: 3 }, (_, i) => {
-        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i + 1);
+    const pagePromises = Array.from({ length: 4 }, (_, i) => {
+        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i);
         return fetchPage(pageUrl).then(htmlBody => htmlBody ? scrapeItems(htmlBody, catalog.type) : []);
     });
 
