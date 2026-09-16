@@ -195,11 +195,8 @@ function getLanguageTag(item) {
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
     const safeId = encodeURIComponent(imdbId);
-    // Restore BetterPoster for untagged items. Tagged items keep the French Poster badge pipeline.
-    if (!languageTag || languageTag === 'NONE') return BETTERPOSTER_BASE + safeId + '.jpg';
-    const root = String(baseUrl || '').replace(/\/$/, '');
-    if (!root) return BETTERPOSTER_BASE + safeId + '.jpg';
-    return root + '/poster/' + safeId + '/' + languageTag.toLowerCase() + '.svg';
+    // BetterPoster for every item. Do not route posters through the optional SVG layer.
+    return BETTERPOSTER_BASE + safeId + '.jpg';
 }
 
 // ============================================================================
@@ -332,7 +329,28 @@ function scrapeSearchItems(html, type) {
     $('.search-item').each((i, el) => {
         const $item = $(el);
         const title = $item.find('.search-title').first().text().trim();
-        let poster = $item.find('img').first().attr('src') || '';
+        const $img = $item.find('img').first();
+    const posterCandidates = [
+        $img.attr('data-src'),
+        $img.attr('data-original'),
+        $img.attr('data-lazy-src'),
+        $img.attr('data-url'),
+        $img.attr('data-poster'),
+        $img.attr('data-image'),
+        $img.attr('data-srcset'),
+        $img.attr('srcset'),
+        $img.attr('src')
+    ].filter(Boolean);
+    let poster = '';
+    for (const candidate of posterCandidates) {
+        const first = String(candidate).split(',')[0]?.trim().split(/\s+/)[0] || '';
+        if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+        if (/(?:^|[\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+        poster = first;
+        break;
+    }
+    if (poster.startsWith('//')) poster = 'https:' + poster;
+    else if (poster && !/^https?:\/\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
         const onclick = $item.attr('onclick') || '';
         const hrefMatch = onclick.match(/location\.href=['"]([^'"]+)['"]/i);
         const href = hrefMatch ? hrefMatch[1] : $item.find('a[href]').first().attr('href');
