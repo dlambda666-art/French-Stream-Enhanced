@@ -29,7 +29,7 @@ jobs:
 
           mkdir extracted
           unzip -q "$ZIP" -d extracted
-           find extracted -type d -name ".github" -prune -exec rm -rf {} +
+          find extracted -type d -name ".github" -prune -exec rm -rf {} +
 
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
@@ -40,6 +40,32 @@ jobs:
           fi
 
           rm -rf extracted "$ZIP"
+
+      - name: Enforce direct poster architecture
+        shell: python
+        run: |
+          from pathlib import Path
+          replacements = [
+              (Path('addon.js'), "poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;", "poster = tmdb.poster || poster;"),
+              (Path('src/worker.mjs'), "const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;", "const poster = tmdb.poster || item.poster;")
+          ]
+          for path, old, new in replacements:
+              if not path.exists():
+                  raise SystemExit(f'Missing required file: {path}')
+              text = path.read_text()
+              if old in text:
+                  text = text.replace(old, new)
+                  path.write_text(text)
+                  print(f'Poster override removed from {path}')
+              elif new in text:
+                  print(f'{path} already uses direct posters')
+              else:
+                  raise SystemExit(f'Expected poster selection not found in {path}')
+
+      - name: Verify poster architecture
+        run: |
+          grep -n "poster = tmdb.poster || poster" addon.js
+          grep -n "const poster = tmdb.poster || item.poster" src/worker.mjs
 
       - name: Commit extracted project
         run: |
