@@ -7,12 +7,7 @@ const fs = require('fs');
 const PORT = process.env.PORT || 7000;
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
-
-function escapeXml(value) {
-    return String(value).replace(/[<>&\"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\"': '&quot;', "'": '&apos;' }[char]));
-}
 
 function getConfigTmdbKey(configStr) {
     if (!configStr) return process.env.TMDB_API_KEY || null;
@@ -25,27 +20,8 @@ function getConfigTmdbKey(configStr) {
     }
 }
 
-async function getTmdbPoster(imdbId, tmdbKey) {
-    if (!tmdbKey) return null;
-    const url = `${TMDB_BASE}/find/${encodeURIComponent(imdbId)}?api_key=${encodeURIComponent(tmdbKey)}&external_source=imdb_id`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } });
-    if (!response.ok) throw new Error(`TMDB find ${response.status}`);
-    const data = await response.json();
-    const item = [...(data.movie_results || []), ...(data.tv_results || [])].find(entry => entry.poster_path);
-    return item?.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : null;
-}
-
 function frenchPosterUrl(imdbId, tag) {
     return `${FRENCH_POSTER_BASE}/poster/${encodeURIComponent(imdbId)}/${tag}.svg`;
-}
-
-function nativePosterUrl(imdbId) {
-    return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
-}
-
-function rewriteBetterPosterUrls(body) {
-    return body.replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
-        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
 }
 
 async function validateTmdbKey(key) {
@@ -104,19 +80,8 @@ const server = http.createServer((req, res) => {
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
-    if (req.url.includes('/catalog/') || req.url.includes('/meta/')) {
-        const originalWrite = res.write.bind(res);
-        const originalEnd = res.end.bind(res);
-        const chunks = [];
-        res.write = (chunk, encoding, callback) => { if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding)); return true; };
-        res.end = (chunk, encoding, callback) => {
-            if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
-            res.removeHeader('Content-Length');
-            return originalEnd(body, 'utf8', callback);
-        };
-    }
-
+    // Do not rewrite BetterPoster URLs here. The addon intentionally returns
+    // BetterPoster URLs and Stremio/Nuvio must receive those URLs unchanged.
     router(req, res, () => { res.writeHead(404); res.end(); });
 });
 
