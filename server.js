@@ -109,7 +109,7 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.url.startsWith('/test-tmdb')) {
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost:' + PORT}`);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Access-Control-Allow-Origin', '*');
         validateTmdbKey(url.searchParams.get('key'))
@@ -122,7 +122,9 @@ const server = http.createServer((req, res) => {
         res.setHeader('Cache-Control', 'max-age=3600, s-maxage=7200, stale-while-revalidate=3600, public');
     }
 
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${req.headers.host || 'localhost:' + PORT}`;
+    const host = req.headers.host || `localhost:${PORT}`;
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${forwardedProto || (host.startsWith('localhost') ? 'http' : 'https')}://${host}`;
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
