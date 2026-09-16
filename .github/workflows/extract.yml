@@ -16,7 +16,73 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Repair BetterPoster and lazy-loaded series posters
-        run: python3 -c 'import base64;exec(base64.b64decode("CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApwID0gUGF0aCgiYWRkb24uanMiKQpzID0gcC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKCm9sZF9icCA9ICIiImZ1bmN0aW9uIGJldHRlclBvc3RlclVybChpbWJkSWQsIGxhbmd1YWdlVGFnLCBiYXNlVXJsID0gJycpIHtcbiAgICBpZiAoIWltYmRJZCB8fCAhL15xdFxkezJ9JC9pLnRlc3QoaW1iZElkKSkgcmV0dXJuIG51bGw7XG4gICAgY29uc3Qgc2FmZUlkID0gZW5jb2RlVVJJQ29tcG9uZW50KGltYmRJZCk7XG4gICAgLy8gTm8gQmV0dGVyUG9zdGVyIGF0IGFsbC4gVGFnZ2VkIGl0ZW1zIHN0aWxsIHVzZSBvdXIgRnJlbmNoIFBvc3RlciBTVkcg cGlwZWxpbmUuXG4gICAgaWYgKCFsYW5ndWFnZVRhZyB8fCBsYW5ndWFnZVRhZyA9PT0gJ05PTkUnKSByZXR1cm4gbnVsbDtcbiAgICBjb25zdCByb290ID0gU3RyaW5nKGJhc2VVcmwgfHwgJycpLnJlcGxhY2UoL1xcLyQvLCAnJyk7XG4gICAgaWYgKCFyb290KSByZXR1cm4gbnVsbDtcbiAgICByZXR1cm4gYCR7cm9vdH0vcG9zdGVyLyR7c2FmZUlkfS8ke2xhbmd1YWdlVGFnLnRvTG93ZXJDYXNlKCl9LnN2Z2A7XG59IiIiCmlmIG9sZF9icCBub3QgaW4g czoKICAgIHJhaXNlIFN5c3RlbUV4aXQoIkJldHRlclBvc3RlciBibG9jayBub3QgZm91bmQiKQpuZXdfYnAgPSAiIiJmdW5jdGlvbiBiZXR0ZXJQb3N0ZXJVcmwoaW1iZElkLCBsYW5ndWFnZVRhZywgYmFzZVVybCA9ICcnKSB7XG4gICAgaWYgKCFpbWJkSWQgfHwgIV50dFxkKyQvaS50ZXN0KGltYmRJZCkpIHJldHVybiBudWxsO1xuICAgIGNvbnN0IHNhZmVJZCA9IGVuY29kZVVSSUNvbXBvbmVudChpbWJkSWQpO1xuICAgIC8vIFJlc3RvcmUgQmV0dGVyUG9zdGVyIGZvciB1bnRhZ2dlZCBpdGVtcy4gVGFnZ2VkIGl0ZW1zIGtlZXAgdGhlIEZyZW5jaCBQb3N0ZXIgYmFkZ2UgcGlwZWxpbmUuXG4gICAgaWYgKCFsYW5ndWFnZVRhZyB8fCBsYW5ndWFnZVRhZyA9PT0gJ05PTkUnKSByZXR1cm4gYCR7QkVUVEVSUE9TVEVSX0JBU0V9JHt1cmxFbmNvZGVkX2lkfS5qcGc7XG4gICAgY29uc3Qgcm9vdCA9IFN0cmluZyhiYXNlVXJsIHx8ICcnKS5yZXBsYWNlKC9cXC8kLywgJycpO1xuICAgIGlmICghcm9vdCkgcmV0dXJuIGBke2JFVFRFUlBPU1RFUl9CQVNFfSR7c2FmZUlkfS5qcGc7XG4gICAgcmV0dXJuIGAke3Jvb3R9L3Bvc3Rlci8ke3NhZmVJZH0vJHtsYW5ndWFnZVRhZy50b0xvd2VyQ2FzZSgpfS5zdmdgO1xufSIiIgppZiBvbGRfYnAgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoIkJldHRlclBvc3RlciBibG9jayBub3QgZm91bmQiKQpzID0gcy5yZXBsYWNlKG9sZF9icCwgbmV3X2JwLCAxKQoKb2xkX3Bvc3RlciA9ICIiIiAgICAgICAgY29uc3QgJGltZyA9ICQoZWwpLmZpbmQoJ2ltZycpLmZpcnN0KCk7XG4gICAgICAgIGxldCBwb3N0ZXIgPSAkJGltZy5hdHRyKCdzcmMnKSB8fCAkJGltZy5hdHRyKCdkYXRhLXNyYycpIHx8ICQkaW1nLmF0dHIoJ2RhdGEtb3JpZ2luYWwnKSB8fCAkJGltZy5hdHRyKCdkYXRhLWxhenktc3JjJykgfHwgJGltZy5hdHRyKCdkYXRhLXVybCcpIHx8ICcnO1xuICAgICAgICBpZiAoIXBvc3Rlcikge1xuICAgICAgICAgICAgY29uc3Qgc3Jj c2V0ID0gJGltZy5hdHRyKCdzcmNzZXQnKSB8fCAkJGltZy5hdHRyKCdkYXRhLXNyY3NldCcpIHx8ICcnO1xuICAgICAgICAgICAgcG9zdGVyID0gc3Jj c2V0LnNwbGl0KCcsJylbMF0/LnRyaW0oKS5zcGxpdCgvXFxcXHMrLylbMF0gfHwgJyc7XG4gICAgICAgIH1cbiAgICAgICAgaWYgKHBvc3RlciAmJiAhcG9zdGVyLnN0YXJ0c1dpdGgoJ2h0dHAnKSkgcG9zdGVyID0gJ2h0dHBzOi8vbWFqLmZyZW5jaC1zdHJlYW0ucGluaycgKyBwb3N0ZXI7IiIiCm5ld19wb3N0ZXIgPSAiIiJcICAgICAgICBjb25zdCAkaW1nID0gJChlbCkuZmluZCgnaW1nJyk uZmlyc3QoKTsKICAgICAgICAvLyBNYW55IHNlcmllcyBwb3N0ZXJzIGFyZSBsYXp5LWxvYWRlZDogc3JjIG1heSBiZSBhIGJsYW5rL3BsYWNlaG9sZGVyIHdoaWxlIHRoZSByZWFsIFVSTCBpcyBpbiBkYXRhLSogb3Igc3Jj c2V0LgpvbnN0IHBvc3RlckNhbmRpZGF0ZXMgPSBbCiAgICAgICAgICAgICRpbWcuYXR0cignZGF0YS1zcmMnKSwKICAgICAgICAgICAgJGltZy5hdHRyKCdkYXRhLW9yaWdpbmFsJyksCiAgICAgICAgICAgICRpbWcuYXR0cignZGF0YS1sYXp5LXNyYycpLAogICAgICAgICAgICAkaW1nLmF0dHIoJ2RhdGEtdXJsJyksCiAgICAgICAgICAgICRpbWcuYXR0cignZGF0YS1wb3N0ZXInKSwKICAgICAgICAgICAgJGltZy5hdHRyKCdkYXRhLWltYWdlJyksCiAgICAgICAgICAgICRpbWcuYXR0cignZGF0YS1zcmNzZXQnKSwKICAgICAgICAgICAgJGltZy5hdHRyKCdsrcset'),CiAgICAgICAgICAgICRpbWcuYXR0cigic3JjIikKICAgICAgICBdLmZpbHRlcihCb29sZWFuKTsKbGV0IHBvc3RlciA9ICcnOwpmb3IgY29uc3QgY2FuZGlkYXRlIG9mIHBvc3RlckNhbmRpZGF0ZXMpIHsKICAgIGNvbnN0IGZpcnN0ID0gU3RyaW5nKGNhbmRpZGF0ZSkuc3BsaXQoJywnKVswXT8udHJpbSgpLnNwbGl0KC9cXHMvKVswXSB8fCAnJzsKICAgIGlmICghZmlyc3QgfHwgL15kYXRhOmltYWdlfGFib3V0OmJsYW5rKS9pLnRlc3QoZmlyc3QpIGNvbnRpbnVlOwogICAgaWYgKC8oPzo6XnxbXFxcL18tXShibGFua3xwbGFjZWhvbGRlcnxzcGFjZXJ8dHJhbnNwYXJlbnQpKD86Wy5fXC8tXS18JCkvKS9pLnRlc3QoZmlyc3QpIGNvbnRpbnVlOwogICAgcG9zdGVyID0gZmlyc3Q7CiAgICBicmVhazsKfQppZiAocG9zdGVyLnN0YXJ0c1dpdGgoJy8vJykpIHBvc3RlciA9ICdodHRwczonICsgcG9zdGVyOwplbHNlIGlmIChwb3N0ZXIgJiYgIV5odHRwcz86XC9cXFx8L2kudGVzdChwb3N0ZXIpKSBwb3N0ZXIgPSAnaHR0cHM6Ly9tYWouZnJlbmNoLXN0cmVhbS5waW5rJyArIChwb3N0ZXIuc3RhcnRzV2l0aCgnLycpID8gJycgOiAnLycpICsgcG9zdGVyOyIiIgppZiBvbGRfcG9zdGVyIG5vdCBpbiBzOiByYWlzZSBTeXN0ZW1FeGl0KCJQb3N0ZXIgYmxvY2sgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGRfcG9zdGVyLCBuZXdfcG9zdGVyLCAxKQoKcC53cml0ZV90ZXh0KHMgZW5jb2Rpbmc9InV0Zi04IikKcHJpbnQoIk9LIik=" )' 
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'addon.js';
+          let s = fs.readFileSync(file, 'utf8');
+
+          const oldBp = `function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              // No BetterPoster at all. Tagged items still use our French Poster SVG pipeline.
+              if (!languageTag || languageTag === 'NONE') return null;
+              const root = String(baseUrl || '').replace(/\\/$/, '');
+              if (!root) return null;
+              return \`${root}/poster/\${safeId}/\${languageTag.toLowerCase()}.svg\`;
+          }`;
+
+          const newBp = `function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              // Restore BetterPoster for untagged items. Tagged items keep the French Poster badge pipeline.
+              if (!languageTag || languageTag === 'NONE') return \`${BETTERPOSTER_BASE}\${safeId}.jpg\`;
+              const root = String(baseUrl || '').replace(/\\/$/, '');
+              if (!root) return \`${BETTERPOSTER_BASE}\${safeId}.jpg\`;
+              return \`${root}/poster/\${safeId}/\${languageTag.toLowerCase()}.svg\`;
+          }`;
+
+          if (!s.includes(oldBp)) throw new Error('BetterPoster block not found');
+          s = s.replace(oldBp, newBp);
+
+          const oldPoster = `        const $img = $(el).find('img').first();
+          let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';
+          if (!poster) {
+              const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';
+              poster = srcset.split(',')[0]?.trim().split(/\\s+/)[0] || '';
+          }
+          if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;`;
+
+          const newPoster = `        const $img = $(el).find('img').first();
+          // Series posters are often lazy-loaded: src can be a blank/placeholder.
+          const posterCandidates = [
+              $img.attr('data-src'),
+              $img.attr('data-original'),
+              $img.attr('data-lazy-src'),
+              $img.attr('data-url'),
+              $img.attr('data-poster'),
+              $img.attr('data-image'),
+              $img.attr('data-srcset'),
+              $img.attr('srcset'),
+              $img.attr('src')
+          ].filter(Boolean);
+          let poster = '';
+          for (const candidate of posterCandidates) {
+              const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';
+              if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+              if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+              poster = first;
+              break;
+          }
+          if (poster.startsWith('//')) poster = 'https:' + poster;
+          else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;`;
+
+          if (!s.includes(oldPoster)) throw new Error('Poster extraction block not found');
+          s = s.replace(oldPoster, newPoster);
+
+          fs.writeFileSync(file, s);
+          console.log('Poster repair applied successfully.');
+          NODE
 
       - name: Validate JavaScript
         run: node --check addon.js
@@ -26,4 +92,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add addon.js
-          if git diff --cached --quiet; then echo "Nothing to commit."; else git commit -m "fix: restore BetterPoster and prefer real lazy-loaded series posters"; git push; fi
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "fix: restore BetterPoster and prefer real lazy-loaded series posters"
+            git push
+          fi
