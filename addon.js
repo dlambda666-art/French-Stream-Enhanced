@@ -292,7 +292,8 @@ async function scrapeItems(html, type) {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
         const $img = $(el).find('img').first();
-        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';
+        // French Stream uses lazy-loading on some posters: prefer the real lazy source over a placeholder src.
+        let poster = $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || $img.attr('src') || '';
         if (!poster) {
             const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';
             poster = srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
