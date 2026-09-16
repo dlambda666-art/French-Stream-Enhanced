@@ -532,8 +532,20 @@ function scrapeItems(htmlBody, type) {
         if (!title) title = $link.attr('title') || $link.find('img').attr('alt') || $link.text().trim();
         if (!title) return;
 
-        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';
-        if (poster && !poster.startsWith('http')) poster = FRENCH_STREAM_ORIGIN + poster;
+        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();
+        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];
+        let poster = '';
+        for (const attr of posterAttrs) {
+            const value = $img.attr(attr);
+            if (value && !/^data:image\//i.test(value)) {
+                poster = value.trim();
+                break;
+            }
+        }
+        if (poster && poster.startsWith('//')) poster = 'https:' + poster;
+        else if (poster && !/^https?:\/\//i.test(poster)) {
+            poster = FRENCH_STREAM_ORIGIN + (poster.startsWith('/') ? poster : '/' + poster);
+        }
 
         const text = $scope.text().replace(/\s+/g, ' ').trim();
         const languageText = text.match(/VF(?:\+VOSTFR)?|VOSTFR/)?.[0] || '';
