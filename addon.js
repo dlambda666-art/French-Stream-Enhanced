@@ -195,11 +195,11 @@ function getLanguageTag(item) {
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
     const safeId = encodeURIComponent(imdbId);
-    // No BetterPoster at all. Tagged items still use our French Poster SVG pipeline.
-    if (!languageTag || languageTag === 'NONE') return null;
+    // Restore BetterPoster for untagged items. Tagged items keep the French Poster badge pipeline.
+    if (!languageTag || languageTag === 'NONE') return BETTERPOSTER_BASE + safeId + '.jpg';
     const root = String(baseUrl || '').replace(/\/$/, '');
-    if (!root) return null;
-    return `${root}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;
+    if (!root) return BETTERPOSTER_BASE + safeId + '.jpg';
+    return root + '/poster/' + safeId + '/' + languageTag.toLowerCase() + '.svg';
 }
 
 // ============================================================================
@@ -291,14 +291,29 @@ async function scrapeItems(html, type) {
     $items.each((i, el) => {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
-        const $img = $(el).find('img').first();
-        // French Stream uses lazy-loading on some posters: prefer the real lazy source over a placeholder src.
-        let poster = $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || $img.attr('src') || '';
-        if (!poster) {
-            const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';
-            poster = srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
+                const $img = $(el).find('img').first();
+        // Series posters are often lazy-loaded: src can be a blank/placeholder.
+        const posterCandidates = [
+            $img.attr('data-src'),
+            $img.attr('data-original'),
+            $img.attr('data-lazy-src'),
+            $img.attr('data-url'),
+            $img.attr('data-poster'),
+            $img.attr('data-image'),
+            $img.attr('data-srcset'),
+            $img.attr('srcset'),
+            $img.attr('src')
+        ].filter(Boolean);
+        let poster = '';
+        for (const candidate of posterCandidates) {
+            const first = String(candidate).split(',')[0]?.trim().split(/\s+/)[0] || '';
+            if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+            if (/(?:^|[\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+            poster = first;
+            break;
         }
-        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
+        if (poster.startsWith('//')) poster = 'https:' + poster;
+        else if (poster && !/^https?:\/\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
 
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
