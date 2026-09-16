@@ -22,17 +22,21 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          old = """        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';\n        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;"""
-          new = """        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();\n        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];\n        let poster = '';\n        for (const attr of posterAttrs) {\n            const value = $img.attr(attr);\n            if (value && !/^data:image\\//i.test(value)) {\n                poster = value.trim();\n                break;\n            }\n        }\n        if (poster && poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !/^https?:\\/\\//i.test(poster)) {\n            poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? poster : '/' + poster);\n        }"""
+          addon_old = """        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';\n        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;"""
+          worker_old = """        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';\n        if (poster && !poster.startsWith('http')) poster = FRENCH_STREAM_ORIGIN + poster;"""
+          new = """        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();\n        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];\n        let poster = '';\n        for (const attr of posterAttrs) {\n            const value = $img.attr(attr);\n            if (value && !/^data:image\\//i.test(value)) {\n                poster = value.trim();\n                break;\n            }\n        }\n        if (poster && poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !/^https?:\\/\\//i.test(poster)) {\n            poster = FRENCH_STREAM_ORIGIN + (poster.startsWith('/') ? poster : '/' + poster);\n        }"""
 
-          for filename in ['addon.js', 'src/worker.mjs']:
-              path = Path(filename)
-              text = path.read_text()
-              if old not in text:
-                  raise SystemExit(f'Expected old poster block not found in {filename}')
-              text = text.replace(old, new, 1)
-              path.write_text(text)
-              print(f'Patched {filename}')
+          addon = Path('addon.js')
+          worker = Path('src/worker.mjs')
+          a = addon.read_text()
+          w = worker.read_text()
+          if addon_old not in a:
+              raise SystemExit('Expected addon poster block not found')
+          if worker_old not in w:
+              raise SystemExit('Expected worker poster block not found')
+          addon.write_text(a.replace(addon_old, new, 1))
+          worker.write_text(w.replace(worker_old, new, 1))
+          print('Both poster extraction blocks patched')
           PY
 
       - name: Verify files
