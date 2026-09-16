@@ -1,0 +1,56 @@
+name: Fix catalog first-page pagination
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Include page 1 in catalog scraping
+        run: |
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'addon.js': (
+                  """    const pagePromises = Array.from({ length: 3 }, (_, i) => {\n        const url = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i + 1);\n        return fetchPage(url).then(html => html ? scrapeItems(html, catalog.type) : []);\n    });""",
+                  """    const pagePromises = Array.from({ length: 4 }, (_, i) => {\n        const url = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i);\n        return fetchPage(url).then(html => html ? scrapeItems(html, catalog.type) : []);\n    });"""
+              ),
+              'src/worker.mjs': (
+                  """    const pagePromises = Array.from({ length: 3 }, (_, i) => {\n        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i + 1);\n        return fetchPage(pageUrl).then(htmlBody => htmlBody ? scrapeItems(htmlBody, catalog.type) : []);\n    });""",
+                  """    const pagePromises = Array.from({ length: 4 }, (_, i) => {\n        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i);\n        return fetchPage(pageUrl).then(htmlBody => htmlBody ? scrapeItems(htmlBody, catalog.type) : []);\n    });"""
+              )
+          }
+
+          changed = False
+          for filename, (old, new) in replacements.items():
+              path = Path(filename)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected block not found in {filename}')
+              path.write_text(text.replace(old, new, 1))
+              changed = True
+
+          if changed:
+              print('Catalog pagination fixed: base + page 1 + page 2 + page 3')
+          PY
+
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          set -e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add addon.js src/worker.mjs
+          git rm -f .github/workflows/fix-first-page.yml
+          git commit -m 'fix: include first numbered catalog page'
+          git push
