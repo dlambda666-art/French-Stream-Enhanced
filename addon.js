@@ -313,7 +313,7 @@ async function scrapeItems(html, type) {
         }
         if (poster && poster.startsWith('//')) poster = 'https:' + poster;
         else if (poster && !/^https?:\/\//i.test(poster)) {
-            poster = FRENCH_STREAM_ORIGIN + (poster.startsWith('/') ? poster : '/' + poster);
+            poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? poster : '/' + poster);
         }
 
         const text = $scope.text().replace(/\s+/g, ' ').trim();
