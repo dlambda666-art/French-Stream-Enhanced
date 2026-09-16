@@ -37,7 +37,7 @@ jobs:
           if (!bpRe.test(s)) throw new Error('BetterPoster function not found');
           s = s.replace(bpRe, newBp);
 
-          const posterRe = /const \$img = \$\(el\)\.find\('img'\)\.first\(\);[\r\n]+\s*let poster = \$img\.attr\('src'\)[\s\S]*?if \(poster && !poster\.startsWith\('http'\)\) poster = 'https:\/\/maj\.french-stream\.pink' \+ poster;/;
+          const posterRe = /const \$img = \$\(el\)\.find\('img'\)\.first\(\);[\s\S]*?if \(poster && !poster\.startsWith\('http'\)\) poster = 'https:\/\/maj\.french-stream\.pink' \+ poster;/;
           const newPoster = [
             "        const $img = $(el).find('img').first();",
             "        // Series posters are often lazy-loaded: src can be a blank/placeholder.",
