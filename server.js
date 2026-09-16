@@ -64,7 +64,10 @@ async function validateTmdbKey(key) {
 }
 
 const server = http.createServer((req, res) => {
-    const parts = req.url.split('/').filter(Boolean);
+    // Parse only the URL path here. req.url also contains the query string,
+    // so splitting it directly would turn /test-tmdb?key=... into a fake config path.
+    const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
+    const parts = pathname.split('/').filter(Boolean);
     let configStr = null;
     if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
         configStr = parts[0];
