@@ -1,1 +1,1 @@
-live poster diagnosis trigger
+deployed catalog diagnosis trigger
