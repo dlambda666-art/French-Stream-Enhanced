@@ -287,46 +287,23 @@ async function fetchSearchPage(query, page = 1) {
 async function scrapeItems(html, type) {
     const $ = cheerio.load(html);
     const items = [];
-    const seen = new Set();
-    const links = $('a[href*="newsid="]');
+    const $items = $('.short-in, .movie-item, .short, article.short, .th-item');
+    $items.each((i, el) => {
+        const $link = $(el).find('a[href]').first();
+        let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
+        let poster = $(el).find('img').first().attr('src') || '';
+        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
 
-    links.each((i, link) => {
-        const $link = $(link);
-        const href = $link.attr('href');
-        if (!href || seen.has(href)) return;
+        // Conserver la version linguistique de FS pour notre couche DUB/SUB.
+        const languageText = $(el).text().replace(/\s+/g, ' ').trim();
+        const languageTag = getLanguageTag({ title, languageText });
+        const isVostfrOnly = languageTag === 'SUB';
 
-        const $card = $link.closest('.short-in, .movie-item, .short, article.short, .th-item, article, li, .item');
-        const $scope = $card.length ? $card : $link.parent();
-        let title = $scope.find('.short-title, .th-title, h3, h4, .title').first().text().trim();
-        if (!title) title = $link.attr('title') || $link.find('img').attr('alt') || $link.text().trim();
-        if (!title) return;
-
-        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();
-        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];
-        let poster = '';
-        for (const attr of posterAttrs) {
-            const value = $img.attr(attr);
-            if (value && !/^data:image\//i.test(value)) {
-                poster = value.trim();
-                break;
-            }
-        }
-        if (poster && poster.startsWith('//')) poster = 'https:' + poster;
-        else if (poster && !/^https?:\/\//i.test(poster)) {
-            poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? poster : '/' + poster);
-        }
-
-        const text = $scope.text().replace(/\s+/g, ' ').trim();
-        const languageText = text.match(/VF(?:\+VOSTFR)?|VOSTFR/)?.[0] || '';
-        const languageTag = languageText === 'VOSTFR' ? 'VOSTFR' : languageText.includes('VF') ? 'VF' : '';
-        const isVostfrOnly = languageText === 'VOSTFR';
-
-        seen.add(href);
-        items.push({ title, poster, href, type, languageText, languageTag, isVostfrOnly });
+        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, isVostfrOnly });
     });
-
     return items;
 }
+
 function scrapeSearchItems(html, type) {
     const $ = cheerio.load(html);
     const items = [];
@@ -361,8 +338,8 @@ async function getCatalogItems(catalogId, config) {
     const catalog = ALL_CATALOGS[catalogId];
     if (!catalog) return [];
 
-    const pagePromises = Array.from({ length: 4 }, (_, i) => {
-        const url = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i);
+    const pagePromises = Array.from({ length: 3 }, (_, i) => {
+        const url = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i + 1);
         return fetchPage(url).then(html => html ? scrapeItems(html, catalog.type) : []);
     });
 
@@ -390,7 +367,7 @@ async function getCatalogItems(catalogId, config) {
             let poster = item.poster;
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = tmdb.poster || poster;
+                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
@@ -471,7 +448,7 @@ async function enrichSearchResults(items, config) {
 
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-                poster = tmdb.poster || poster;
+                poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,

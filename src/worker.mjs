@@ -260,8 +260,8 @@ async function getCatalogItems(catalogId, config, ctx) {
     const catalog = ALL_CATALOGS[catalogId];
     if (!catalog) return [];
 
-    const pagePromises = Array.from({ length: 4 }, (_, i) => {
-        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i);
+    const pagePromises = Array.from({ length: 3 }, (_, i) => {
+        const pageUrl = i === 0 ? catalog.baseUrl : catalog.pageUrl.replace('{page}', i + 1);
         return fetchPage(pageUrl).then(htmlBody => htmlBody ? scrapeItems(htmlBody, catalog.type) : []);
     });
 
@@ -298,7 +298,7 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
 
     if (tmdb) {
         const id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
-        const poster = tmdb.poster || item.poster;
+        const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;
 
         meta = {
             id,
@@ -518,46 +518,24 @@ async function getEnhancedPosterResponse(request, imdbId, tag, ctx) {
 function scrapeItems(htmlBody, type) {
     const $ = cheerio.load(htmlBody);
     const items = [];
-    const seen = new Set();
-    const links = $('a[href*="newsid="]');
+    const $items = $('.short-in, .movie-item, .short, article.short, .th-item');
 
-    links.each((i, link) => {
-        const $link = $(link);
-        const href = $link.attr('href');
-        if (!href || seen.has(href)) return;
+    $items.each((i, el) => {
+        const $link = $(el).find('a[href]').first();
+        let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
+        let poster = $(el).find('img').first().attr('src') || '';
+        if (poster && !poster.startsWith('http')) poster = FRENCH_STREAM_ORIGIN + poster;
 
-        const $card = $link.closest('.short-in, .movie-item, .short, article.short, .th-item, article, li, .item');
-        const $scope = $card.length ? $card : $link.parent();
-        let title = $scope.find('.short-title, .th-title, h3, h4, .title').first().text().trim();
-        if (!title) title = $link.attr('title') || $link.find('img').attr('alt') || $link.text().trim();
-        if (!title) return;
+        const languageText = $(el).text().replace(/\s+/g, ' ').trim();
+        const languageTag = getLanguageTag({ title, languageText });
+        const isVostfrOnly = languageTag === 'SUB';
 
-        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();
-        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];
-        let poster = '';
-        for (const attr of posterAttrs) {
-            const value = $img.attr(attr);
-            if (value && !/^data:image\//i.test(value)) {
-                poster = value.trim();
-                break;
-            }
-        }
-        if (poster && poster.startsWith('//')) poster = 'https:' + poster;
-        else if (poster && !/^https?:\/\//i.test(poster)) {
-            poster = FRENCH_STREAM_ORIGIN + (poster.startsWith('/') ? poster : '/' + poster);
-        }
-
-        const text = $scope.text().replace(/\s+/g, ' ').trim();
-        const languageText = text.match(/VF(?:\+VOSTFR)?|VOSTFR/)?.[0] || '';
-        const languageTag = languageText === 'VOSTFR' ? 'VOSTFR' : languageText.includes('VF') ? 'VF' : '';
-        const isVostfrOnly = languageText === 'VOSTFR';
-
-        seen.add(href);
-        items.push({ title, poster, href, type, languageText, languageTag, isVostfrOnly });
+        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, isVostfrOnly });
     });
 
     return items;
 }
+
 function scrapeSearchItems(htmlBody, type) {
     const $ = cheerio.load(htmlBody);
     const items = [];
