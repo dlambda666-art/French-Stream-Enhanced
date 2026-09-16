@@ -1,1 +1,1 @@
-deployed catalog diagnosis trigger
+tmdb poster verification trigger
