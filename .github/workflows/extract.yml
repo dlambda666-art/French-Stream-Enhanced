@@ -41,20 +41,65 @@ jobs:
 
           rm -rf extracted "$ZIP"
 
-      - name: Fix lazy-loaded poster extraction
+      - name: Repair poster sources
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('addon.js')
-          s = p.read_text()
-          old = "        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';"
-          new = "        // French Stream uses lazy-loading on some posters: prefer the real lazy source over a placeholder src.\n        let poster = $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || $img.attr('src') || '';"
+          s = p.read_text(encoding='utf-8')
+
+          # BetterPoster must be the primary poster source again. The server no
+          # longer rewrites these URLs, so Nuvio receives the real BetterPoster.
+          bp = re.compile(r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}", re.S)
+          new_bp = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
+              const safeId = encodeURIComponent(imdbId);
+              // BetterPoster for every item. This avoids blank series posters caused
+              // by the optional French Poster SVG layer while keeping one stable source.
+              return BETTERPOSTER_BASE + safeId + '.jpg';
+          }"""
+          s, n = bp.subn(new_bp, s, count=1)
+          if n != 1:
+              raise SystemExit('betterPosterUrl function not found')
+
+          # Search results can use lazy-loaded image attributes too.
+          old = """        let poster = $item.find('img').first().attr('src') || '';
+"""
+          new = """        const $img = $item.find('img').first();
+        const posterCandidates = [
+            $img.attr('data-src'),
+            $img.attr('data-original'),
+            $img.attr('data-lazy-src'),
+            $img.attr('data-url'),
+            $img.attr('data-poster'),
+            $img.attr('data-image'),
+            $img.attr('data-srcset'),
+            $img.attr('srcset'),
+            $img.attr('src')
+        ].filter(Boolean);
+        let poster = '';
+        for (const candidate of posterCandidates) {
+            const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';
+            if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+            if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+            poster = first;
+            break;
+        }
+        if (poster.startsWith('//')) poster = 'https:' + poster;
+        else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
+"""
           if old in s:
-              p.write_text(s.replace(old, new, 1))
-              print('Lazy poster extraction fixed.')
-          else:
-              print('Lazy poster extraction already fixed or source line changed; no patch needed.')
+              s = s.replace(old, new, 1)
+          elif 'const posterCandidates = [' not in s:
+              raise SystemExit('search poster extraction block not found')
+
+          p.write_text(s, encoding='utf-8')
           PY
+
+      - name: Validate JavaScript
+        run: node --check addon.js
 
       - name: Commit extracted project
         run: |
@@ -66,6 +111,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "fix: support lazy-loaded poster sources"
+            git commit -m "fix: enforce BetterPoster and robust search posters"
             git push
           fi
