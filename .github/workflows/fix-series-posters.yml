@@ -1,56 +1,24 @@
 name: Repair series poster extraction
-
 on:
   push:
     branches:
       - main
-
 permissions:
   contents: write
-
 jobs:
   repair:
-    if: ${{ github.event.head_commit.message != 'fix: restore series poster extraction' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Patch poster extraction
-        shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('addon.js')
-          s = p.read_text()
-          old = "        let poster = $(el).find('img').first().attr('src') || '';"
-          new = '''        const $img = $(el).find('img').first();
-          let poster = $img.attr('src')
-              || $img.attr('data-src')
-              || $img.attr('data-original')
-              || $img.attr('data-lazy-src')
-              || $img.attr('data-url')
-              || '';
-          if (!poster) {
-              const srcset = $img.attr('srcset') || $img.attr('data-srcset') || '';
-              poster = srcset.split(',')[0]?.trim().split(/\\s+/)[0] || '';
-          }'''
-          if old not in s:
-              raise SystemExit('Expected poster extraction line not found')
-          p.write_text(s.replace(old, new, 1))
-          PY
-
-      - name: Commit repair
-        shell: bash
+          python3 -c 'from pathlib import Path; p=Path("addon.js"); s=p.read_text(); old="        let poster = $(el).find(\"img\").first().attr(\"src\") || \"\";"; new="        const $img = $(el).find(\"img\").first();\\n        let poster = $img.attr(\"src\") || $img.attr(\"data-src\") || $img.attr(\"data-original\") || $img.attr(\"data-lazy-src\") || $img.attr(\"data-url\") || \"\";\\n        if (!poster) {\\n            const srcset = $img.attr(\"srcset\") || $img.attr(\"data-srcset\") || \"\";\\n            poster = srcset.split(\",\")[0]?.trim().split(/\\\\s+/)[0] || \"\";\\n        }"; assert old in s, "poster line not found"; p.write_text(s.replace(old,new,1))'
+      - name: Commit repair and remove workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add addon.js
+          git add addon.js .github/workflows/fix-series-posters.yml
           git commit -m "fix: restore series poster extraction"
-          git push
-
-      - name: Remove temporary workflow
-        shell: bash
-        run: |
           git rm .github/workflows/fix-series-posters.yml
           git commit -m "chore: remove temporary repair workflow"
           git push
