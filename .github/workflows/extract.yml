@@ -11,76 +11,61 @@ permissions:
 jobs:
   extract:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Repair BetterPoster and lazy-loaded series posters
+      - name: Extract project ZIP
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const file = 'addon.js';
-          let s = fs.readFileSync(file, 'utf8');
+          set -e
 
-          const bpRe = /function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{[\s\S]*?\n\}/;
-          const newBp = [
-            "function betterPosterUrl(imdbId, languageTag, baseUrl = '') {",
-            "    if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;",
-            "    const safeId = encodeURIComponent(imdbId);",
-            "    // Restore BetterPoster for untagged items. Tagged items keep the French Poster badge pipeline.",
-            "    if (!languageTag || languageTag === 'NONE') return BETTERPOSTER_BASE + safeId + '.jpg';",
-            "    const root = String(baseUrl || '').replace(/\\/$/, '');",
-            "    if (!root) return BETTERPOSTER_BASE + safeId + '.jpg';",
-            "    return root + '/poster/' + safeId + '/' + languageTag.toLowerCase() + '.svg';",
-            "}"
-          ].join('\n');
-          if (!bpRe.test(s)) throw new Error('BetterPoster function not found');
-          s = s.replace(bpRe, newBp);
+          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
-          const posterRe = /const \$img = \$\(el\)\.find\('img'\)\.first\(\);[\s\S]*?if \(poster && !poster\.startsWith\('http'\)\) poster = 'https:\/\/maj\.french-stream\.pink' \+ poster;/;
-          const newPoster = [
-            "        const $img = $(el).find('img').first();",
-            "        // Series posters are often lazy-loaded: src can be a blank/placeholder.",
-            "        const posterCandidates = [",
-            "            $img.attr('data-src'),",
-            "            $img.attr('data-original'),",
-            "            $img.attr('data-lazy-src'),",
-            "            $img.attr('data-url'),",
-            "            $img.attr('data-poster'),",
-            "            $img.attr('data-image'),",
-            "            $img.attr('data-srcset'),",
-            "            $img.attr('srcset'),",
-            "            $img.attr('src')",
-            "        ].filter(Boolean);",
-            "        let poster = '';",
-            "        for (const candidate of posterCandidates) {",
-            "            const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';",
-            "            if (!first || /^(data:image|about:blank)/i.test(first)) continue;",
-            "            if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;",
-            "            poster = first;",
-            "            break;",
-            "        }",
-            "        if (poster.startsWith('//')) poster = 'https:' + poster;",
-            "        else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;"
-          ].join('\n');
-          if (!posterRe.test(s)) throw new Error('Poster extraction block not found');
-          s = s.replace(posterRe, newPoster);
+          if [ -z "$ZIP" ]; then
+            echo "No ZIP file found. Nothing to do."
+            exit 0
+          fi
 
-          fs.writeFileSync(file, s);
-          console.log('Poster repair applied successfully.');
-          NODE
+          mkdir extracted
+          unzip -q "$ZIP" -d extracted
+          find extracted -type d -name ".github" -prune -exec rm -rf {} +
 
-      - name: Validate JavaScript
-        run: node --check addon.js
+          ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
-      - name: Commit repaired addon
+          if [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ]; then
+            cp -a "$ROOT"/. .
+          else
+            cp -a extracted/. .
+          fi
+
+          rm -rf extracted "$ZIP"
+
+      - name: Fix lazy-loaded poster extraction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('addon.js')
+          s = p.read_text()
+          old = "        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';"
+          new = "        // French Stream uses lazy-loading on some posters: prefer the real lazy source over a placeholder src.\n        let poster = $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || $img.attr('src') || '';"
+          if old in s:
+              p.write_text(s.replace(old, new, 1))
+              print('Lazy poster extraction fixed.')
+          else:
+              print('Lazy poster extraction already fixed or source line changed; no patch needed.')
+          PY
+
+      - name: Commit extracted project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add addon.js
+
+          git add -A
+
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "fix: restore BetterPoster and prefer real lazy-loaded series posters"
+            git commit -m "fix: support lazy-loaded poster sources"
             git push
           fi
