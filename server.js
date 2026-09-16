@@ -43,8 +43,11 @@ function nativePosterUrl(imdbId) {
     return `https://images.metahub.space/poster/medium/${encodeURIComponent(imdbId)}/img`;
 }
 
-function rewriteBetterPosterUrls(body) {
-    return body.replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
+function rewriteBetterPosterUrls(body, publicBaseUrl) {
+    const root = String(publicBaseUrl || '').replace(/\/$/, '');
+    return body
+        .replace(/https?:\/\/image\.tmdb\.org\/t\/p\/(w\d+|original)\/([A-Za-z0-9._-]+\.jpg)/gi, (_, size, file) => `${root}/tmdb-poster/${size}/${file}`)
+        .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?\/((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))
         .replace(/https?:\/\/btttr\.cc\/[^\"'\s<>]*?((tt\d+))\.jpg(?:\?[^\"'\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));
 }
 
@@ -66,7 +69,7 @@ async function validateTmdbKey(key) {
 const server = http.createServer((req, res) => {
     const parts = req.url.split('/').filter(Boolean);
     let configStr = null;
-    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb'].includes(parts[0])) {
+    if (parts.length >= 1 && !['manifest.json', 'catalog', 'meta', 'poster', 'tmdb-poster', 'configure', 'test-tmdb'].includes(parts[0])) {
         configStr = parts[0];
         req.url = req.url.replace('/' + configStr, '') || '/';
     }
@@ -76,6 +79,28 @@ const server = http.createServer((req, res) => {
         const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());
         res.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
         return res.end();
+    }
+
+    const tmdbPosterMatch = req.url.match(/^\/tmdb-poster\/(w\d+|original)\/([A-Za-z0-9._-]+\.jpg)$/i);
+    if (tmdbPosterMatch) {
+        const target = `https://image.tmdb.org/t/p/${tmdbPosterMatch[1]}/${tmdbPosterMatch[2]}`;
+        fetch(target, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } })
+            .then(async response => {
+                if (!response.ok) throw new Error(`TMDB image ${response.status}`);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                res.writeHead(200, {
+                    'Content-Type': response.headers.get('content-type') || 'image/jpeg',
+                    'Content-Length': String(buffer.length),
+                    'Cache-Control': 'public, max-age=2592000, s-maxage=2592000',
+                    'Access-Control-Allow-Origin': '*'
+                });
+                res.end(buffer);
+            })
+            .catch(error => {
+                if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end(`Poster proxy error: ${error?.message || 'TMDB image unavailable'}`);
+            });
+        return;
     }
 
     if (req.url === '/' || req.url === '/configure') {
@@ -108,7 +133,7 @@ const server = http.createServer((req, res) => {
         res.write = (chunk, encoding, callback) => { if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding)); return true; };
         res.end = (chunk, encoding, callback) => {
             if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-            const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));
+            const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'), publicBaseUrl);
             res.removeHeader('Content-Length');
             return originalEnd(body, 'utf8', callback);
         };
