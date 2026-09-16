@@ -518,24 +518,34 @@ async function getEnhancedPosterResponse(request, imdbId, tag, ctx) {
 function scrapeItems(htmlBody, type) {
     const $ = cheerio.load(htmlBody);
     const items = [];
-    const $items = $('.short-in, .movie-item, .short, article.short, .th-item');
+    const seen = new Set();
+    const links = $('a[href*="newsid="]');
 
-    $items.each((i, el) => {
-        const $link = $(el).find('a[href]').first();
-        let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
-        let poster = $(el).find('img').first().attr('src') || '';
+    links.each((i, link) => {
+        const $link = $(link);
+        const href = $link.attr('href');
+        if (!href || seen.has(href)) return;
+
+        const $card = $link.closest('.short-in, .movie-item, .short, article.short, .th-item, article, li, .item');
+        const $scope = $card.length ? $card : $link.parent();
+        let title = $scope.find('.short-title, .th-title, h3, h4, .title').first().text().trim();
+        if (!title) title = $link.attr('title') || $link.find('img').attr('alt') || $link.text().trim();
+        if (!title) return;
+
+        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';
         if (poster && !poster.startsWith('http')) poster = FRENCH_STREAM_ORIGIN + poster;
 
-        const languageText = $(el).text().replace(/\s+/g, ' ').trim();
-        const languageTag = getLanguageTag({ title, languageText });
-        const isVostfrOnly = languageTag === 'SUB';
+        const text = $scope.text().replace(/\s+/g, ' ').trim();
+        const languageText = text.match(/VF(?:\+VOSTFR)?|VOSTFR/)?.[0] || '';
+        const languageTag = languageText === 'VOSTFR' ? 'VOSTFR' : languageText.includes('VF') ? 'VF' : '';
+        const isVostfrOnly = languageText === 'VOSTFR';
 
-        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, isVostfrOnly });
+        seen.add(href);
+        items.push({ title, poster, href, type, languageText, languageTag, isVostfrOnly });
     });
 
     return items;
 }
-
 function scrapeSearchItems(htmlBody, type) {
     const $ = cheerio.load(htmlBody);
     const items = [];
