@@ -29,7 +29,7 @@ jobs:
 
           mkdir extracted
           unzip -q "$ZIP" -d extracted
-           find extracted -type d -name ".github" -prune -exec rm -rf {} +
+          find extracted -type d -name ".github" -prune -exec rm -rf {} +
 
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
@@ -41,6 +41,21 @@ jobs:
 
           rm -rf extracted "$ZIP"
 
+      - name: Fix lazy-loaded poster extraction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('addon.js')
+          s = p.read_text()
+          old = "        let poster = $img.attr('src') || $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || '';"
+          new = "        // French Stream uses lazy-loading on some posters: prefer the real lazy source over a placeholder src.\n        let poster = $img.attr('data-src') || $img.attr('data-original') || $img.attr('data-lazy-src') || $img.attr('data-url') || $img.attr('src') || '';"
+          if old in s:
+              p.write_text(s.replace(old, new, 1))
+              print('Lazy poster extraction fixed.')
+          else:
+              print('Lazy poster extraction already fixed or source line changed; no patch needed.')
+          PY
+
       - name: Commit extracted project
         run: |
           git config user.name "github-actions[bot]"
@@ -51,6 +66,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "Extract French Stream project"
+            git commit -m "fix: support lazy-loaded poster sources"
             git push
           fi
