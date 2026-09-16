@@ -1,0 +1,54 @@
+name: Repair poster extraction
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch poster extraction
+        run: |
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+
+          old = """        let poster = $scope.find('img').first().attr('src') || $scope.find('img').first().attr('data-src') || $link.find('img').attr('src') || '';\n        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;"""
+          new = """        const $img = $scope.find('img').first().length ? $scope.find('img').first() : $link.find('img').first();\n        const posterAttrs = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-image', 'data-lazy', 'data-fallback', 'data-url', 'data-thumb'];\n        let poster = '';\n        for (const attr of posterAttrs) {\n            const value = $img.attr(attr);\n            if (value && !/^data:image\\//i.test(value)) {\n                poster = value.trim();\n                break;\n            }\n        }\n        if (poster && poster.startsWith('//')) poster = 'https:' + poster;\n        else if (poster && !/^https?:\\/\\//i.test(poster)) {\n            poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? poster : '/' + poster);\n        }"""
+
+          for filename in ['addon.js', 'src/worker.mjs']:
+              path = Path(filename)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected old poster block not found in {filename}')
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+              print(f'Patched {filename}')
+          PY
+
+      - name: Verify files
+        run: |
+          grep -q "data-lazy-src" addon.js
+          grep -q "data-lazy-src" src/worker.mjs
+          grep -q "module.exports" addon.js
+          grep -q "getAddonInterface" src/worker.mjs
+          echo "Poster extraction patch verified"
+
+      - name: Commit repair and remove one-shot workflow
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js src/worker.mjs
+          git rm .github/workflows/fix-poster-v2.yml
+          git commit -m "fix: robust lazy poster extraction"
+          git push
