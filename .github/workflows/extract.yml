@@ -25,45 +25,30 @@ jobs:
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
           if [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ]; then cp -a "$ROOT"/. .; else cp -a extracted/. .; fi
           rm -rf extracted "$ZIP"
-      - name: Verify TMDB poster responses
-        shell: python
-        run: |
-          import urllib.request
-          paths = {
-            'violent':'nTOcuBNhCoCTlGjWJtPoOu6OlaR.jpg',
-            'noel':'bItJW60f2JZ0otXxK1rKG5aW8Ky.jpg',
-            'winnie2':'s8oLTxEwlv3AMDEDlE7q2LyWhjO.jpg',
-            'wake':'kNcUH0rfdBKTBCvdFxGvuBInU4O.jpg',
-            'maxxxine':'uagihpF2YcMBqCEZVcWtACqJS4w.jpg',
-            'intrus':'8tTf9k67NN737FaHnK7YqFpLzBX.jpg',
-            'thanksgiving':'rH9uuXHAHsm6NdVzZPlhSReguLa.jpg'
-          }
-          for name, path in paths.items():
-            for size in ('w300','w500'):
-              url=f'https://image.tmdb.org/t/p/{size}/{path}'
-              try:
-                req=urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
-                r=urllib.request.urlopen(req, timeout=20)
-                body=r.read()
-                print(name, size, r.status, r.headers.get('Content-Type'), len(body))
-              except Exception as e:
-                print(name, size, 'ERROR', repr(e))
-      - name: Enforce direct poster architecture
+      - name: Apply final TMDB poster proxy
         shell: python
         run: |
           from pathlib import Path
-          replacements=[
-            (Path('addon.js'),"poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;","poster = tmdb.poster || poster;"),
-            (Path('src/worker.mjs'),"const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;","const poster = tmdb.poster || item.poster;")
-          ]
-          for path,old,new in replacements:
-            if not path.exists(): raise SystemExit(f'Missing required file: {path}')
-            text=path.read_text()
-            if old in text: path.write_text(text.replace(old,new)); print(f'Poster override removed from {path}')
-            elif new in text: print(f'{path} already uses direct posters')
-            else: raise SystemExit(f'Expected poster selection not found in {path}')
-      - name: Verify poster architecture
+          p = Path('server.js')
+          text = p.read_text()
+          old = """function rewriteBetterPosterUrls(body) {\n    return body.replace(/https?:\\/\\/btttr\\.cc\\/[^\\\"'\\s<>]*?\\/((tt\\d+))\\.jpg(?:\\?[^\\\"'\\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))\n        .replace(/https?:\\/\\/btttr\\.cc\\/[^\\\"'\\s<>]*?((tt\\d+))\\.jpg(?:\\?[^\\\"'\\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));\n}\n"""
+          new = """function rewriteBetterPosterUrls(body, publicBaseUrl) {\n    const root = String(publicBaseUrl || '').replace(/\\/$/, '');\n    return body\n        .replace(/https?:\\/\\/image\\.tmdb\\.org\\/t\\/p\\/(w\\d+|original)\\/([A-Za-z0-9._-]+\\.jpg)/gi, (_, size, file) => `${root}/tmdb-poster/${size}/${file}`)\n        .replace(/https?:\\/\\/btttr\\.cc\\/[^\\\"'\\s<>]*?\\/((tt\\d+))\\.jpg(?:\\?[^\\\"'\\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId))\n        .replace(/https?:\\/\\/btttr\\.cc\\/[^\\\"'\\s<>]*?((tt\\d+))\\.jpg(?:\\?[^\\\"'\\s<>]*)?/gi, (_, fullId, imdbId) => nativePosterUrl(imdbId));\n}\n"""
+          if old not in text:
+              raise SystemExit('rewriteBetterPosterUrls block not found')
+          text = text.replace(old, new)
+          text = text.replace("!['manifest.json', 'catalog', 'meta', 'poster', 'configure', 'test-tmdb']", "!['manifest.json', 'catalog', 'meta', 'poster', 'tmdb-poster', 'configure', 'test-tmdb']")
+          marker = """    const posterMatch = req.url.match(/^\\/poster\\/(tt\\d+)\\/(dub|sub|dub_sub)\\.svg$/i);\n    if (posterMatch) {\n        const target = frenchPosterUrl(posterMatch[1], posterMatch[2].toLowerCase());\n        res.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });\n        return res.end();\n    }\n\n"""
+          insert = marker + """    const tmdbPosterMatch = req.url.match(/^\\/tmdb-poster\\/(w\\d+|original)\\/([A-Za-z0-9._-]+\\.jpg)$/i);\n    if (tmdbPosterMatch) {\n        const target = `https://image.tmdb.org/t/p/${tmdbPosterMatch[1]}/${tmdbPosterMatch[2]}`;\n        fetch(target, { headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' } })\n            .then(async response => {\n                if (!response.ok) throw new Error(`TMDB image ${response.status}`);\n                const buffer = Buffer.from(await response.arrayBuffer());\n                res.writeHead(200, {\n                    'Content-Type': response.headers.get('content-type') || 'image/jpeg',\n                    'Content-Length': String(buffer.length),\n                    'Cache-Control': 'public, max-age=2592000, s-maxage=2592000',\n                    'Access-Control-Allow-Origin': '*'\n                });\n                res.end(buffer);\n            })\n            .catch(error => {\n                if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });\n                res.end(`Poster proxy error: ${error?.message || 'TMDB image unavailable'}`);\n            });\n        return;\n    }\n\n"""
+          if marker not in text:
+              raise SystemExit('poster route marker not found')
+          text = text.replace(marker, insert, 1)
+          text = text.replace("const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'));", "const body = rewriteBetterPosterUrls(Buffer.concat(chunks).toString('utf8'), publicBaseUrl);")
+          p.write_text(text)
+          print('server.js TMDB poster proxy installed')
+      - name: Verify proxy implementation
         run: |
+          grep -n "tmdb-poster" server.js
+          grep -n "rewriteBetterPosterUrls(Buffer.concat(chunks)" server.js
           grep -n "poster = tmdb.poster || poster" addon.js
           grep -n "const poster = tmdb.poster || item.poster" src/worker.mjs
       - name: Commit extracted project
@@ -71,4 +56,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then echo "Nothing to commit."; else git commit -m "Extract French Stream project"; git push; fi
+          if git diff --cached --quiet; then echo "Nothing to commit."; else git commit -m "fix: proxy TMDB posters through addon"; git push; fi
