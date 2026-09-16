@@ -11,115 +11,64 @@ permissions:
 jobs:
   extract:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Extract project ZIP
         run: |
           set -e
           ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-          if [ -z "$ZIP" ]; then
-            echo "No ZIP file found. Nothing to do."
-            exit 0
-          fi
+          if [ -z "$ZIP" ]; then echo "No ZIP file found. Nothing to do."; exit 0; fi
           mkdir extracted
           unzip -q "$ZIP" -d extracted
           find extracted -type d -name ".github" -prune -exec rm -rf {} +
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
-          if [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ]; then
-            cp -a "$ROOT"/. .
-          else
-            cp -a extracted/. .
-          fi
+          if [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ]; then cp -a "$ROOT"/. .; else cp -a extracted/. .; fi
           rm -rf extracted "$ZIP"
-
-      - name: Inspect deployed Slasher catalog
+      - name: Verify TMDB poster responses
         shell: python
         run: |
-          import json, urllib.request
-          url = 'https://lambda666-frankenstream.hf.space/catalog/movie/tag-slasher.json'
-          try:
-              req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
-              data = json.loads(urllib.request.urlopen(req, timeout=30).read().decode('utf-8'))
-              metas = data.get('metas', [])
-              print('DEPLOYED_CATALOG_HTTP_OK metas=', len(metas))
-              wanted = ['In a Violent Nature', 'Un Noël sans fin', 'Winnie-the-Pooh', 'Wake Up', 'MaXXXine', 'Les Intrus', 'Thanksgiving']
-              for m in metas:
-                  name = str(m.get('name',''))
-                  if any(x.lower() in name.lower() for x in wanted):
-                      print(json.dumps({'id':m.get('id'),'name':name,'poster':m.get('poster'),'type':m.get('type')}, ensure_ascii=False))
-              print('FIRST_ITEMS')
-              for m in metas[:20]:
-                  print(json.dumps({'id':m.get('id'),'name':m.get('name'),'poster':m.get('poster')}, ensure_ascii=False))
-          except Exception as e:
-              print('DEPLOYED_CATALOG_ERROR', repr(e))
-
-      - name: Inspect live French Stream poster markup
-        shell: python
-        run: |
-          import re, urllib.request
-          urls = [
-              'https://maj.french-stream.pink/xfsearch/ftagz/slasher/',
-              'https://maj.french-stream.pink/xfsearch/ftagz/slasher/page/2/',
-              'https://maj.french-stream.pink/xfsearch/ftagz/slasher/page/3/'
-          ]
-          needles = ['violent', 'winnie', 'noël', 'noel', 'wake up', 'maxxxine', 'intrus', 'thanksgiving']
-          for url in urls:
+          import urllib.request
+          paths = {
+            'violent':'nTOcuBNhCoCTlGjWJtPoOu6OlaR.jpg',
+            'noel':'bItJW60f2JZ0otXxK1rKG5aW8Ky.jpg',
+            'winnie2':'s8oLTxEwlv3AMDEDlE7q2LyWhjO.jpg',
+            'wake':'kNcUH0rfdBKTBCvdFxGvuBInU4O.jpg',
+            'maxxxine':'uagihpF2YcMBqCEZVcWtACqJS4w.jpg',
+            'intrus':'8tTf9k67NN737FaHnK7YqFpLzBX.jpg',
+            'thanksgiving':'rH9uuXHAHsm6NdVzZPlhSReguLa.jpg'
+          }
+          for name, path in paths.items():
+            for size in ('w300','w500'):
+              url=f'https://image.tmdb.org/t/p/{size}/{path}'
               try:
-                  req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
-                  html = urllib.request.urlopen(req, timeout=20).read().decode('utf-8', 'ignore')
-                  print(f'LIVE_URL {url} HTTP_OK bytes={len(html)}')
-                  low = html.lower()
-                  for needle in needles:
-                      start = 0
-                      count = 0
-                      while count < 3:
-                          pos = low.find(needle, start)
-                          if pos < 0: break
-                          snippet = re.sub(r'\s+', ' ', html[max(0,pos-900):pos+1300])
-                          print(f'--- {needle} ---')
-                          print(snippet[:2200])
-                          start = pos + len(needle)
-                          count += 1
+                req=urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
+                r=urllib.request.urlopen(req, timeout=20)
+                body=r.read()
+                print(name, size, r.status, r.headers.get('Content-Type'), len(body))
               except Exception as e:
-                  print(f'LIVE_URL_ERROR {url} {e!r}')
-
+                print(name, size, 'ERROR', repr(e))
       - name: Enforce direct poster architecture
         shell: python
         run: |
           from pathlib import Path
-          replacements = [
-              (Path('addon.js'), "poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;", "poster = tmdb.poster || poster;"),
-              (Path('src/worker.mjs'), "const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;", "const poster = tmdb.poster || item.poster;")
+          replacements=[
+            (Path('addon.js'),"poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;","poster = tmdb.poster || poster;"),
+            (Path('src/worker.mjs'),"const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;","const poster = tmdb.poster || item.poster;")
           ]
-          for path, old, new in replacements:
-              if not path.exists():
-                  raise SystemExit(f'Missing required file: {path}')
-              text = path.read_text()
-              if old in text:
-                  text = text.replace(old, new)
-                  path.write_text(text)
-                  print(f'Poster override removed from {path}')
-              elif new in text:
-                  print(f'{path} already uses direct posters')
-              else:
-                  raise SystemExit(f'Expected poster selection not found in {path}')
-
+          for path,old,new in replacements:
+            if not path.exists(): raise SystemExit(f'Missing required file: {path}')
+            text=path.read_text()
+            if old in text: path.write_text(text.replace(old,new)); print(f'Poster override removed from {path}')
+            elif new in text: print(f'{path} already uses direct posters')
+            else: raise SystemExit(f'Expected poster selection not found in {path}')
       - name: Verify poster architecture
         run: |
           grep -n "poster = tmdb.poster || poster" addon.js
           grep -n "const poster = tmdb.poster || item.poster" src/worker.mjs
-
       - name: Commit extracted project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then
-            echo "Nothing to commit."
-          else
-            git commit -m "Extract French Stream project"
-            git push
-          fi
+          if git diff --cached --quiet; then echo "Nothing to commit."; else git commit -m "Extract French Stream project"; git push; fi
