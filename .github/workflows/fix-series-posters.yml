@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Patch poster extraction
         run: |
-          python3 -c 'from pathlib import Path; p=Path("addon.js"); s=p.read_text(); old="        let poster = $(el).find(\"img\").first().attr(\"src\") || \"\";"; new="        const $img = $(el).find(\"img\").first();\\n        let poster = $img.attr(\"src\") || $img.attr(\"data-src\") || $img.attr(\"data-original\") || $img.attr(\"data-lazy-src\") || $img.attr(\"data-url\") || \"\";\\n        if (!poster) {\\n            const srcset = $img.attr(\"srcset\") || $img.attr(\"data-srcset\") || \"\";\\n            poster = srcset.split(\",\")[0]?.trim().split(/\\\\s+/)[0] || \"\";\\n        }"; assert old in s, "poster line not found"; p.write_text(s.replace(old,new,1))'
+          python3 -c 'from pathlib import Path; p=Path("addon.js"); s=p.read_text(); old="        let poster = $(el).find(\x27img\x27).first().attr(\x27src\x27) || \x27\x27;"; new="        const $img = $(el).find(\x27img\x27).first();\\n        let poster = $img.attr(\x27src\x27) || $img.attr(\x27data-src\x27) || $img.attr(\x27data-original\x27) || $img.attr(\x27data-lazy-src\x27) || $img.attr(\x27data-url\x27) || \x27\x27;\\n        if (!poster) {\\n            const srcset = $img.attr(\x27srcset\x27) || $img.attr(\x27data-srcset\x27) || \x27\x27;\\n            poster = srcset.split(\x27,\x27)[0]?.trim().split(/\\\\s+/)[0] || \x27\x27;\\n        }"; assert old in s, "poster line not found"; p.write_text(s.replace(old,new,1))'
       - name: Commit repair and remove workflow
         run: |
           git config user.name "github-actions[bot]"
