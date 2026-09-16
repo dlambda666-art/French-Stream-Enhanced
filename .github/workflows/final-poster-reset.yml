@@ -1,0 +1,49 @@
+name: Final poster architecture reset
+on:
+  push:
+    paths:
+      - .github/workflows/final-poster-reset.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove custom poster override from runtime
+        shell: python
+        run: |
+          from pathlib import Path
+          files = [Path('addon.js'), Path('src/worker.mjs')]
+          replacements = [
+              ("poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;", "poster = tmdb.poster || poster;"),
+              ("const poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || item.poster;", "const poster = tmdb.poster || item.poster;")
+          ]
+          changed = []
+          for path in files:
+              text = path.read_text()
+              old = text
+              for a, b in replacements:
+                  text = text.replace(a, b)
+              if text == old:
+                  raise SystemExit(f'No expected poster selection found in {path}')
+              path.write_text(text)
+              changed.append(str(path))
+          print('Changed:', ', '.join(changed))
+      - name: Verify final poster path
+        run: |
+          grep -n "poster = tmdb.poster || poster" addon.js
+          grep -n "const poster = tmdb.poster || item.poster" src/worker.mjs
+          ! grep -n "betterPosterUrl(tmdb.imdbId" addon.js src/worker.mjs
+      - name: Commit reset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js src/worker.mjs
+          git commit -m "fix: use direct TMDB or source posters" || exit 0
+          git push
