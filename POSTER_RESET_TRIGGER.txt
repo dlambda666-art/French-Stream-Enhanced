@@ -1,1 +1,1 @@
-tmdb poster verification trigger
+deploy TMDB poster proxy
