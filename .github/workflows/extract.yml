@@ -19,84 +19,73 @@ jobs:
       - name: Extract project ZIP
         run: |
           set -e
-
           ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-
           if [ -z "$ZIP" ]; then
             echo "No ZIP file found. Nothing to do."
             exit 0
           fi
-
           mkdir extracted
           unzip -q "$ZIP" -d extracted
           find extracted -type d -name ".github" -prune -exec rm -rf {} +
-
           ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
-
           if [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ]; then
             cp -a "$ROOT"/. .
           else
             cp -a extracted/. .
           fi
-
           rm -rf extracted "$ZIP"
 
       - name: Repair poster sources
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'addon.js';
+          let s = fs.readFileSync(file, 'utf8');
 
-          p = Path('addon.js')
-          s = p.read_text(encoding='utf-8')
+          const start = s.indexOf('function betterPosterUrl(imdbId, languageTag, baseUrl = \'\') {');
+          const marker = '\n}\n\n// ============================================================================\n// TMDB & SCRAPER';
+          const end = start >= 0 ? s.indexOf(marker, start) : -1;
+          if (start < 0 || end < 0) throw new Error('betterPosterUrl block not found');
+          const betterPoster = [
+            "function betterPosterUrl(imdbId, languageTag, baseUrl = '') {",
+            "    if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;",
+            "    const safeId = encodeURIComponent(imdbId);",
+            "    // BetterPoster for every item; do not route it through another poster service.",
+            "    return BETTERPOSTER_BASE + safeId + '.jpg';",
+            "}"
+          ].join('\\n');
+          s = s.slice(0, start) + betterPoster + s.slice(end + 2);
 
-          # BetterPoster must be the primary poster source again. The server no
-          # longer rewrites these URLs, so Nuvio receives the real BetterPoster.
-          bp = re.compile(r"function betterPosterUrl\(imdbId, languageTag, baseUrl = ''\) \{.*?\n\}", re.S)
-          new_bp = """function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
-              if (!imdbId || !/^tt\\d+$/i.test(imdbId)) return null;
-              const safeId = encodeURIComponent(imdbId);
-              // BetterPoster for every item. This avoids blank series posters caused
-              // by the optional French Poster SVG layer while keeping one stable source.
-              return BETTERPOSTER_BASE + safeId + '.jpg';
-          }"""
-          s, n = bp.subn(new_bp, s, count=1)
-          if n != 1:
-              raise SystemExit('betterPosterUrl function not found')
+          const searchOld = "        let poster = $item.find('img').first().attr('src') || '';";
+          const searchNew = [
+            "        const $img = $item.find('img').first();",
+            "        const posterCandidates = [",
+            "            $img.attr('data-src'),",
+            "            $img.attr('data-original'),",
+            "            $img.attr('data-lazy-src'),",
+            "            $img.attr('data-url'),",
+            "            $img.attr('data-poster'),",
+            "            $img.attr('data-image'),",
+            "            $img.attr('data-srcset'),",
+            "            $img.attr('srcset'),",
+            "            $img.attr('src')",
+            "        ].filter(Boolean);",
+            "        let poster = '';",
+            "        for (const candidate of posterCandidates) {",
+            "            const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';",
+            "            if (!first || /^(data:image|about:blank)/i.test(first)) continue;",
+            "            if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;",
+            "            poster = first;",
+            "            break;",
+            "        }",
+            "        if (poster.startsWith('//')) poster = 'https:' + poster;",
+            "        else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;"
+          ].join('\\n');
+          if (s.includes(searchOld)) s = s.replace(searchOld, searchNew, 1);
 
-          # Search results can use lazy-loaded image attributes too.
-          old = """        let poster = $item.find('img').first().attr('src') || '';
-"""
-          new = """        const $img = $item.find('img').first();
-        const posterCandidates = [
-            $img.attr('data-src'),
-            $img.attr('data-original'),
-            $img.attr('data-lazy-src'),
-            $img.attr('data-url'),
-            $img.attr('data-poster'),
-            $img.attr('data-image'),
-            $img.attr('data-srcset'),
-            $img.attr('srcset'),
-            $img.attr('src')
-        ].filter(Boolean);
-        let poster = '';
-        for (const candidate of posterCandidates) {
-            const first = String(candidate).split(',')[0]?.trim().split(/\\s+/)[0] || '';
-            if (!first || /^(data:image|about:blank)/i.test(first)) continue;
-            if (/(?:^|[\\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
-            poster = first;
-            break;
-        }
-        if (poster.startsWith('//')) poster = 'https:' + poster;
-        else if (poster && !/^https?:\\/\\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
-"""
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif 'const posterCandidates = [' not in s:
-              raise SystemExit('search poster extraction block not found')
-
-          p.write_text(s, encoding='utf-8')
-          PY
+          fs.writeFileSync(file, s);
+          console.log('Poster repair applied.');
+          NODE
 
       - name: Validate JavaScript
         run: node --check addon.js
@@ -105,12 +94,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add -A
-
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "fix: enforce BetterPoster and robust search posters"
+            git commit -m "fix: restore BetterPoster for all catalog items"
             git push
           fi
