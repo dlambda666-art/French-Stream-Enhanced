@@ -6,13 +6,13 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 7000;
 
-const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_BASE = 'https://api.themovied.org/3';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
 
-function getConfigTmdbKey(configStr) {
-    if (!configStr) return process.env.TMDB_API_KEY || null;
+function getConfigTmdbKey(key) {
+    if (!key) return process.env.TMDB_API_KEY || null;
     try {
-        const decoded = Buffer.from(configStr, 'base64').toString('utf8');
+        const decoded = Buffer.from(key, 'base64').toString('utf8');
         const config = JSON.parse(decoded);
         return config.t || process.env.TMDB_API_KEY || null;
     } catch {
@@ -40,8 +40,7 @@ async function validateTmdbKey(key) {
 }
 
 const server = http.createServer((req, res) => {
-    // Parse only the URL path here. req.url also contains the query string,
-    // so splitting it directly would turn /test-tmdb?key=... into a fake config path.
+    // Keep query strings intact while extracting an optional encoded config path.
     const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
     const parts = pathname.split('/').filter(Boolean);
     let configStr = null;
@@ -80,8 +79,7 @@ const server = http.createServer((req, res) => {
     const addonInterface = getAddonInterface(configStr, publicBaseUrl);
     const router = getRouter(addonInterface);
 
-    // Do not rewrite BetterPoster URLs here. The addon intentionally returns
-    // BetterPoster URLs and Stremio/Nuvio must receive those URLs unchanged.
+    // BetterPoster URLs are intentionally returned unchanged by the addon.
     router(req, res, () => { res.writeHead(404); res.end(); });
 });
 
