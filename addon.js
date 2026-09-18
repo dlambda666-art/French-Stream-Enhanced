@@ -250,6 +250,7 @@ async function searchTMDB(title, type, tmdbKey) {
                 backdrop: details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : null,
                 year: details.release_date?.substring(0, 4) || details.first_air_date?.substring(0, 4),
                 title: details.title || details.name,
+                originalTitle: details.original_title || details.original_name || null,
                 description: details.overview,
                 rating: details.vote_average,
                 genres: details.genres?.map(g => g.name) || [],
@@ -523,6 +524,19 @@ async function enrichSearchResults(items, config) {
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
+                    meta: {
+                        frenchpulse_meta_version: 1,
+                        tmdb_id: tmdb.tmdbId,
+                        imdb_id: tmdb.imdbId || null,
+                        original_title: tmdb.originalTitle || null,
+                        vf: item.languageTag === 'DUB' || item.languageTag === 'DUB_SUB',
+                        vf_source: 'French Stream Enhanced',
+                        vf_verified: item.languageTag === 'DUB' || item.languageTag === 'DUB_SUB',
+                        quality: item.quality || null,
+                        status: null,
+                        reason: null,
+                        digital_release_date: null
+                    },
                     description: tmdb.description, releaseInfo: tmdb.year, imdbRating: tmdb.rating,
                     genres: tmdb.genres, runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
                     behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
