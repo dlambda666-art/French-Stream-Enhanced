@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import configureHtml from '../public/configure.html';
 import { resolveCinemetaMeta } from './cinemeta.mjs';
 import { fetchFrenchStreamDescription } from './french-stream-meta.mjs';
+import { buildFrenchPulseMeta } from './frenchpulse-meta.mjs';
 import { createBasicMetaFromFsId, decodeBase64Url, decodeStremioPathId, encodeBase64Url } from './stremio-id.mjs';
 
 const CATALOG_CACHE_TTL = 6 * 60 * 60;
@@ -314,6 +315,20 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
             runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
             behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
         };
+
+        meta.frenchpulse = buildFrenchPulseMeta({
+            tmdbId: tmdb.tmdbId,
+            imdbId: tmdb.imdbId,
+            title: meta.name,
+            year: tmdb.year,
+            poster,
+            backdrop: tmdb.backdrop,
+            originalTitle: tmdb.originalTitle,
+            vf: ['DUB', 'DUB_SUB'].includes(item.languageTag),
+            vfSource: 'French Stream Enhanced',
+            vfVerified: ['DUB', 'DUB_SUB'].includes(item.languageTag),
+            quality: null
+        });
     } else {
         meta = await resolveCinemetaMeta(item.searchTitle, item.type) || meta;
         const frenchDescription = await fetchFrenchStreamDescription(item.href);
