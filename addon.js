@@ -429,6 +429,19 @@ async function getCatalogItems(catalogId, config) {
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: tmdb.title || item.searchTitle || item.title, poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
+                    meta: {
+                        frenchpulse_meta_version: 1,
+                        tmdb_id: tmdb.tmdbId,
+                        imdb_id: tmdb.imdbId || null,
+                        original_title: tmdb.originalTitle || null,
+                        vf: item.languageTag === 'DUB' || item.languageTag === 'DUB_SUB',
+                        vf_source: 'French Stream Enhanced',
+                        vf_verified: item.languageTag === 'DUB' || item.languageTag === 'DUB_SUB',
+                        quality: item.quality || null,
+                        status: null,
+                        reason: null,
+                        digital_release_date: null
+                    },
                     description: tmdb.description, releaseInfo: tmdb.year, imdbRating: tmdb.rating,
                     genres: tmdb.genres, runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
                     behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
