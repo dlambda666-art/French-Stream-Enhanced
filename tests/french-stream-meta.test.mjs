@@ -22,7 +22,7 @@ assert.equal(
 
 assert.equal(
     normalizeFrenchStreamUrl('/15126409-chantage.html'),
-    'https://french-stream.pink/15126409-chantage.html'
+    'https://maj.french-stream.pink/15126409-chantage.html'
 );
 
 assert.equal(extractFrenchStreamDescription('<meta name="description" content="Résumé français">'), 'Résumé français');
