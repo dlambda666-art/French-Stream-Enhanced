@@ -192,6 +192,23 @@ function getLanguageTag(item) {
     return 'NONE';
 }
 
+function getQualityTag(item) {
+    const text = `${item?.languageText || ''} ${item?.title || ''}`.toUpperCase();
+    const checks = [
+        ['HDLight', /\bHDLIGHT\b/],
+        ['WEB-DL', /\bWEB[ -]?DL\b/],
+        ['WEBRip', /\bWEBRIP\b/],
+        ['BluRay', /\bBLURAY\b/],
+        ['HDRip', /\bHDRIP\b/],
+        ['FHD', /\bFHD\b/],
+        ['HD', /\bHD\b/],
+        ['TS', /\bTS\b/],
+        ['CAM', /\bCAM\b/]
+    ];
+    return checks.find(([, pattern]) => pattern.test(text))?.[0] || null;
+}
+
+
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
     const safeId = encodeURIComponent(imdbId);
