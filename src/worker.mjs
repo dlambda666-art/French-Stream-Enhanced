@@ -336,7 +336,14 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
     }
 
     ctx?.waitUntil(putMeta(meta));
-    return { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster, posterShape: 'poster' };
+    return {
+        id: meta.id,
+        type: meta.type,
+        name: meta.name,
+        poster: meta.poster,
+        posterShape: 'poster',
+        frenchpulse: meta.frenchpulse || null
+    };
 }
 
 async function enrichSearchResults(items, config, ctx) {
