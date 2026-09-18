@@ -8,7 +8,7 @@ import { createBasicMetaFromFsId, decodeBase64Url, decodeStremioPathId, encodeBa
 const CATALOG_CACHE_TTL = 6 * 60 * 60;
 const META_CACHE_TTL = 24 * 60 * 60;
 const MANIFEST_CACHE_TTL = 24 * 60 * 60;
-const CACHE_VERSION = 'v13';
+const CACHE_VERSION = 'v14';
 const SEARCH_ENRICH_LIMIT = 12;
 const FRENCH_STREAM_ORIGIN = 'https://french-stream.pink';
 const BETTERPOSTER_BASE = 'https://btttr.cc/poster/imdb/poster-default/';
