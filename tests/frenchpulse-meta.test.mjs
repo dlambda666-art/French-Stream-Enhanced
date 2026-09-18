@@ -25,6 +25,8 @@ assert.equal(meta.backdrop, 'https://example.test/backdrop.jpg');
 assert.equal(meta.original_title, 'Original Test');
 assert.equal(meta.vf, true);
 assert.equal(meta.quality, 'HDLight');
+assert.equal(meta.vf_source, 'French Stream Enhanced');
+assert.equal(meta.vf_verified, true);
 
 assert.equal(normalizeFrenchPulseStatus('nouveaute_vf'), 'nouveaute_vf');
 assert.equal(normalizeFrenchPulseStatus('invalid'), null);
