@@ -7,7 +7,7 @@
         "start": "node server.js",
         "dev:worker": "wrangler dev",
         "deploy:worker": "wrangler deploy",
-        "check": "node --check addon.js && node --check server.js && node --check api/index.js && node --check src/worker.mjs && node --check src/stremio-id.mjs && node --check src/cinemeta.mjs && node --check src/french-stream-meta.mjs && node tests/stremio-id.test.mjs && node tests/cinemeta.test.mjs && node tests/french-stream-meta.test.mjs"
+        "check": "node --check addon.js && node --check server.js && node --check api/index.js && node --check src/worker.mjs && node --check src/stremio-id.mjs && node --check src/cinemeta.mjs && node --check src/french-stream-meta.mjs && node tests/stremio-id.test.mjs && node tests/cinemeta.test.mjs && node tests/french-stream-meta.test.mjs && node tests/addon-posters.test.mjs"
     },
     "dependencies": {
         "stremio-addon-sdk": "^1.6.10",
