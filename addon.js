@@ -377,7 +377,8 @@ function scrapeSearchItems(html, type) {
         if (!title || !href || itemType !== type) return;
         if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
         const languageTag = getLanguageTag({ title, languageText: title });
-        items.push({ title, poster, href, type: itemType, languageText: title, languageTag, isVostfrOnly: languageTag === 'SUB' });
+        const quality = getQualityTag({ title, languageText: title });
+        items.push({ title, poster, href, type: itemType, languageText: title, languageTag, quality, isVostfrOnly: languageTag === 'SUB' });
     });
 
     return items;
