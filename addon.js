@@ -603,4 +603,4 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     return builder.getInterface();
 };
 
-module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag };
+module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, getFrenchPoster };
