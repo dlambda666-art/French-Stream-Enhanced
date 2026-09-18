@@ -3,7 +3,6 @@ import configureHtml from '../public/configure.html';
 import { resolveCinemetaMeta } from './cinemeta.mjs';
 import { fetchFrenchStreamDescription } from './french-stream-meta.mjs';
 import { createBasicMetaFromFsId, decodeBase64Url, decodeStremioPathId, encodeBase64Url } from './stremio-id.mjs';
-import { buildFrenchPulseMeta } from './frenchpulse-meta.mjs';
 
 const CATALOG_CACHE_TTL = 6 * 60 * 60;
 const META_CACHE_TTL = 24 * 60 * 60;
