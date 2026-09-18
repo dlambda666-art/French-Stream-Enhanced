@@ -332,9 +332,10 @@ async function scrapeItems(html, type) {
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
         const languageTag = getLanguageTag({ title, languageText });
+        const quality = getQualityTag({ title, languageText });
         const isVostfrOnly = languageTag === 'SUB';
 
-        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, isVostfrOnly });
+        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, quality, isVostfrOnly });
     });
     return items;
 }
