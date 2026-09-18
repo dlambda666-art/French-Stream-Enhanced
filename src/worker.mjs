@@ -327,7 +327,7 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
             vf: ['DUB', 'DUB_SUB'].includes(item.languageTag),
             vfSource: 'French Stream Enhanced',
             vfVerified: ['DUB', 'DUB_SUB'].includes(item.languageTag),
-            quality: null
+            quality: item.quality || null
         });
     } else {
         meta = await resolveCinemetaMeta(item.searchTitle, item.type) || meta;
@@ -471,6 +471,22 @@ async function fetchSearchPage(query, page = 1) {
     }
 }
 
+function getQualityTag(item) {
+    const text = `${item?.languageText || ''} ${item?.title || ''}`.toUpperCase();
+    const checks = [
+        ['HDLight', /\\bHDLIGHT\\b/],
+        ['WEB-DL', /\\bWEB[ -]?DL\\b/],
+        ['WEBRip', /\\bWEBRIP\\b/],
+        ['BluRay', /\\bBLURAY\\b/],
+        ['HDRip', /\\bHDRIP\\b/],
+        ['FHD', /\\bFHD\\b/],
+        ['HD', /\\bHD\\b/],
+        ['TS', /\\bTS\\b/],
+        ['CAM', /\\bCAM\\b/]
+    ];
+    return checks.find(([, pattern]) => pattern.test(text))?.[0] || null;
+}
+
 function getLanguageTag(item) {
     const text = `${item?.languageText || ''} ${item?.title || ''}`.toUpperCase();
     const hasDub = /\bVF\b|\bFRENCH\b|\bTRUEFRENCH\b/.test(text);
@@ -544,8 +560,9 @@ function scrapeItems(htmlBody, type) {
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
         const languageTag = getLanguageTag({ title, languageText });
         const isVostfrOnly = languageTag === 'SUB';
+        const quality = getQualityTag({ title, languageText });
 
-        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, isVostfrOnly });
+        if (title && $link.attr('href')) items.push({ title, poster, href: $link.attr('href'), type, languageText, languageTag, quality, isVostfrOnly });
     });
 
     return items;
