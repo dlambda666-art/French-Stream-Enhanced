@@ -717,6 +717,15 @@ async function resolveMetaFromFsId(type, id) {
     const meta = createBasicMetaFromFsId(type, id);
     if (!meta) return null;
     const resolved = await resolveCinemetaMeta(meta.name, type) || meta;
+    if (resolved && !resolved.frenchpulse) {
+        resolved.frenchpulse = buildFrenchPulseMeta({
+            imdbId: resolved.id?.startsWith('tt') ? resolved.id : null,
+            title: resolved.name || meta.name,
+            year: resolved.releaseInfo || null,
+            poster: resolved.poster || null,
+            backdrop: resolved.background || null
+        });
+    }
     const results = await searchFrenchStream(meta.name, type);
     const frenchDescription = await fetchFrenchStreamDescription(results[0]?.href);
     return frenchDescription ? { ...resolved, description: frenchDescription } : resolved;
