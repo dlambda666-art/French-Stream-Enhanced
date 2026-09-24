@@ -248,7 +248,7 @@ async function testTMDBKey(tmdbKey) {
 
     try {
         const response = await fetch(
-            `https://api.themoviedb.org/3/authentication?api_key=${encodeURIComponent(tmdbKey)}`
+            `https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(tmdbKey)}`
         );
 
         const data = await response.json().catch(() => ({}));
@@ -256,15 +256,17 @@ async function testTMDBKey(tmdbKey) {
         if (!response.ok) {
             return {
                 valid: false,
-                error: data.status_message || `TMDB HTTP ${response.status}`
+                error: data.status_message || 'invalid_key'
             };
         }
 
-        return { valid: true };
+        return {
+            valid: Boolean(data.images?.secure_base_url)
+        };
     } catch (e) {
         return {
             valid: false,
-            error: e?.message || 'tmdb_unreachable'
+            error: 'tmdb_unreachable'
         };
     }
 }
