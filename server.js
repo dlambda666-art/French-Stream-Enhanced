@@ -26,16 +26,33 @@ function frenchPosterUrl(imdbId, tag) {
 
 async function validateTmdbKey(key) {
     if (!key) return { valid: false, error: 'missing_key' };
+
     try {
-        const response = await fetch(`${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`, {
-            headers: { 'User-Agent': 'FrenchStreamEnhanced/0.1' }
+        const response = await fetch(`${TMDB_BASE}/authentication?api_key=${encodeURIComponent(key)}`, {
+            headers: {
+                'User-Agent': 'FrenchStreamEnhanced/0.1'
+            }
         });
+
         if (response.ok) return { valid: true };
+
         let detail = '';
-        try { detail = (await response.json())?.status_message || ''; } catch {}
-        return { valid: false, error: 'tmdb_rejected', status: response.status, message: detail || `TMDB HTTP ${response.status}` };
+        try {
+            detail = (await response.json())?.status_message || '';
+        } catch {}
+
+        return {
+            valid: false,
+            error: 'tmdb_rejected',
+            status: response.status,
+            message: detail || `TMDB HTTP ${response.status}`
+        };
     } catch (error) {
-        return { valid: false, error: 'tmdb_unreachable', message: error?.message || 'TMDB unreachable' };
+        return {
+            valid: false,
+            error: 'tmdb_unreachable',
+            message: error?.message || 'TMDB unreachable'
+        };
     }
 }
 
