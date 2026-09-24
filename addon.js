@@ -247,17 +247,27 @@ async function testTMDBKey(tmdbKey) {
     if (!tmdbKey) return { valid: false, error: 'missing_key' };
 
     try {
-        const response = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(tmdbKey)}`);
+        const response = await fetch(
+            `https://api.themoviedb.org/3/authentication?api_key=${encodeURIComponent(tmdbKey)}`
+        );
+
         const data = await response.json().catch(() => ({}));
+
         if (!response.ok) {
-            return { valid: false, error: data.status_message || 'invalid_key' };
+            return {
+                valid: false,
+                error: data.status_message || `TMDB HTTP ${response.status}`
+            };
         }
-        return { valid: Boolean(data.images?.secure_base_url) };
+
+        return { valid: true };
     } catch (e) {
-        return { valid: false, error: 'tmdb_unreachable' };
+        return {
+            valid: false,
+            error: e?.message || 'tmdb_unreachable'
+        };
     }
 }
-
 async function fetchPage(url) {
     try {
         const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
