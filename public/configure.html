@@ -360,9 +360,11 @@
                 const result = await response.json();
 
                 if (!response.ok || !result.valid) {
-                    validTmdbKey = '';
-                    setTmdbStatus("Clé TMDB invalide. Vérifiez que vous utilisez bien une clé API v3.", true);
-                    return false;
+    validTmdbKey = '';
+    const detail = result.message || result.error || `HTTP ${response.status}`;
+    setTmdbStatus(`Erreur TMDB : ${detail}`, true);
+    console.error('TMDB test:', result);
+    return false;
                 }
 
                 validTmdbKey = tmdb;
