@@ -6,7 +6,7 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 7000;
 
-const TMDB_BASE = 'https://api.themovied.org/3';
+const TMDB_BASE = 'https://api.themoviedb.org/3';
 const FRENCH_POSTER_BASE = 'https://lambda666-french-poster.hf.space';
 
 function getConfigTmdbKey(key) {
