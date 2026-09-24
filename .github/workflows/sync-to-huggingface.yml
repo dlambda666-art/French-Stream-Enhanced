@@ -18,11 +18,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync to Hugging Face Space
+      - name: Install Hugging Face CLI
+        run: pip install -U huggingface_hub
+
+      - name: Sync repository to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git remote add hf "https://user:${HF_TOKEN}@huggingface.co/spaces/Lambda666/Frankenstream"
-          git push hf HEAD:main --force
+          hf upload \
+            Lambda666/Frankenstream \
+            . \
+            --repo-type space \
+            --exclude=".git*" \
+            --exclude=".github*" \
+            --delete="*" \
+            --commit-message="Sync from GitHub"
