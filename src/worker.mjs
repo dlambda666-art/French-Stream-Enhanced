@@ -478,14 +478,60 @@ function escapeXml(value) {
 }
 
 function posterSvg(imageBase64, mime, tag) {
-    const badge = (x, width, label, color) => `<rect x="${x}" y="18" width="${width}" height="54" rx="10" fill="${color}" opacity="0.96"/><text x="${x + width / 2}" y="54" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">${escapeXml(label)}</text>`;
+    const normalizedTag = String(tag || '').toLowerCase();
+
+    const badge = (x, width, label, background, textColor = '#ffffff') => `
+      <g>
+        <rect
+          x="${x}"
+          y="18"
+          width="${width}"
+          height="54"
+          rx="12"
+          fill="${background}"
+          opacity="0.97"
+        />
+        <text
+          x="${x + width / 2}"
+          y="45"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="27"
+          font-weight="800"
+          letter-spacing="0.5"
+          fill="${textColor}"
+        >${escapeXml(label)}</text>
+      </g>`;
+
     let badges = '';
-    if (tag === 'dub') badges = badge(18, 105, 'DUB', '#1976d2');
-    else if (tag === 'sub') badges = badge(18, 105, 'SUB', '#d62828');
-    else badges = badge(18, 105, 'DUB', '#1976d2') + badge(133, 105, 'SUB', '#d62828');
+
+    if (normalizedTag === 'dub') {
+        badges = badge(18, 92, 'VF', '#20a84b');
+    } else if (normalizedTag === 'sub') {
+        badges = badge(18, 122, 'VOSTFR', '#000000');
+    } else if (normalizedTag === 'dub_sub') {
+        badges =
+            badge(18, 92, 'VF', '#20a84b') +
+            badge(120, 122, 'VOSTFR', '#000000');
+    }
+
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="500" height="750" viewBox="0 0 500 750">
-  <image href="data:${mime};base64,${imageBase64}" x="0" y="0" width="500" height="750" preserveAspectRatio="xMidYMid slice"/>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="500"
+  height="750"
+  viewBox="0 0 500 750"
+>
+  <image
+    href="data:${mime};base64,${imageBase64}"
+    x="0"
+    y="0"
+    width="500"
+    height="750"
+    preserveAspectRatio="xMidYMid slice"
+  />
+
   ${badges}
 </svg>`;
 }
