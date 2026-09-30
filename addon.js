@@ -203,7 +203,7 @@ function stripLangWords(title) {
         .replace(/[\[\(]\s*(VOSTFR|VFF|VFQ|VF|TRUEFRENCH|FRENCH)\s*[\]\)]/gi, '')
         .replace(/\b(VOSTFR|VFF|VFQ|VF|TRUEFRENCH)\b/gi, '')
         .replace(/\s{2,}/g, ' ')
-        .replace(/[\s\-–:|]+$/, '')
+        .replace(/[\s\-\u2013:|]+$/, '')
         .trim();
 }
 
@@ -213,21 +213,11 @@ function withLangBadge(name, languageTag) {
     return label ? `[${label}] ${base}` : base;
 }
 
-function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
+// Affiche BetterPoster directe (les affiches /poster/...svg ne s'affichaient pas dans Nuvio).
+// La langue est indiquee dans le titre ([VF] / [VOSTFR]).
+function betterPosterUrl(imdbId) {
     if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
-
-    const safeId = encodeURIComponent(imdbId);
-
-    // Sans détection linguistique : BetterPoster original
-    const badgeTag = { DUB: 'dub', SUB: 'sub', DUB_SUB: 'dub_sub' }[String(languageTag || '').toUpperCase()];
-    const base = String(baseUrl || '').replace(/\/+$/, '');
-
-    if (!badgeTag || !base) {
-        return BETTERPOSTER_BASE + safeId + '.jpg';
-    }
-
-    // Notre serveur génère l'affiche BetterPoster + badge.
-    return `${base}/poster/${safeId}/${badgeTag}.svg`;
+    return BETTERPOSTER_BASE + encodeURIComponent(imdbId) + '.jpg';
 }
 
 // ============================================================================
@@ -301,7 +291,6 @@ async function testTMDBKey(tmdbKey) {
         };
     }
 }
-
 async function fetchPage(url) {
     try {
         const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -325,35 +314,6 @@ async function fetchSearchPage(query, page = 1) {
     } catch (e) { return null; }
 }
 
-// Extrait l'URL d'affiche d'une balise <img> (gère le lazy-loading)
-function extractPoster($img) {
-    const posterCandidates = [
-        $img.attr('data-src'),
-        $img.attr('data-original'),
-        $img.attr('data-lazy-src'),
-        $img.attr('data-url'),
-        $img.attr('data-poster'),
-        $img.attr('data-image'),
-        $img.attr('data-srcset'),
-        $img.attr('srcset'),
-        $img.attr('src')
-    ].filter(Boolean);
-
-    let poster = '';
-    for (const candidate of posterCandidates) {
-        const first = String(candidate).split(',')[0]?.trim().split(/\s+/)[0] || '';
-        if (!first || /^(data:image|about:blank)/i.test(first)) continue;
-        if (/(?:^|[\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
-        poster = first;
-        break;
-    }
-
-    if (poster.startsWith('//')) poster = 'https:' + poster;
-    else if (poster && !/^https?:\/\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
-
-    return poster;
-}
-
 async function scrapeItems(html, type) {
     const $ = cheerio.load(html);
     const items = [];
@@ -361,7 +321,29 @@ async function scrapeItems(html, type) {
     $items.each((i, el) => {
         const $link = $(el).find('a[href]').first();
         let title = $(el).find('.short-title, .th-title, h3, h4, .title').text().trim() || $link.attr('title') || '';
-        const poster = extractPoster($(el).find('img').first());
+                const $img = $(el).find('img').first();
+        // Series posters are often lazy-loaded: src can be a blank/placeholder.
+        const posterCandidates = [
+            $img.attr('data-src'),
+            $img.attr('data-original'),
+            $img.attr('data-lazy-src'),
+            $img.attr('data-url'),
+            $img.attr('data-poster'),
+            $img.attr('data-image'),
+            $img.attr('data-srcset'),
+            $img.attr('srcset'),
+            $img.attr('src')
+        ].filter(Boolean);
+        let poster = '';
+        for (const candidate of posterCandidates) {
+            const first = String(candidate).split(',')[0]?.trim().split(/\s+/)[0] || '';
+            if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+            if (/(?:^|[\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+            poster = first;
+            break;
+        }
+        if (poster.startsWith('//')) poster = 'https:' + poster;
+        else if (poster && !/^https?:\/\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
 
         // Conserver la version linguistique de FS pour notre couche DUB/SUB.
         const languageText = $(el).text().replace(/\s+/g, ' ').trim();
@@ -380,14 +362,35 @@ function scrapeSearchItems(html, type) {
     $('.search-item').each((i, el) => {
         const $item = $(el);
         const title = $item.find('.search-title').first().text().trim();
-        const poster = extractPoster($item.find('img').first());
-
+        const $img = $item.find('img').first();
+    const posterCandidates = [
+        $img.attr('data-src'),
+        $img.attr('data-original'),
+        $img.attr('data-lazy-src'),
+        $img.attr('data-url'),
+        $img.attr('data-poster'),
+        $img.attr('data-image'),
+        $img.attr('data-srcset'),
+        $img.attr('srcset'),
+        $img.attr('src')
+    ].filter(Boolean);
+    let poster = '';
+    for (const candidate of posterCandidates) {
+        const first = String(candidate).split(',')[0]?.trim().split(/\s+/)[0] || '';
+        if (!first || /^(data:image|about:blank)/i.test(first)) continue;
+        if (/(?:^|[\/_-])(blank|placeholder|spacer|transparent)(?:[._/-]|$)/i.test(first)) continue;
+        poster = first;
+        break;
+    }
+    if (poster.startsWith('//')) poster = 'https:' + poster;
+    else if (poster && !/^https?:\/\//i.test(poster)) poster = 'https://maj.french-stream.pink' + (poster.startsWith('/') ? '' : '/') + poster;
         const onclick = $item.attr('onclick') || '';
         const hrefMatch = onclick.match(/location\.href=['"]([^'"]+)['"]/i);
         const href = hrefMatch ? hrefMatch[1] : $item.find('a[href]').first().attr('href');
         const itemType = inferSearchItemType(title, href);
 
         if (!title || !href || itemType !== type) return;
+        if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
         const languageTag = getLanguageTag({ title, languageText: title });
         items.push({ title, poster, href, type: itemType, languageText: title, languageTag, isVostfrOnly: languageTag === 'SUB' });
     });
@@ -438,20 +441,14 @@ async function getCatalogItems(catalogId, config) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
-                    id, type: item.type,
-                    name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag),
-                    poster, background: tmdb.backdrop,
+                    id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
                     description: tmdb.description, releaseInfo: tmdb.year, imdbRating: tmdb.rating,
                     genres: tmdb.genres, runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
                     behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
                 });
             }
-            return {
-                id, type: item.type,
-                name: withLangBadge(item.searchTitle || item.title, item.languageTag),
-                poster, posterShape: 'poster'
-            };
+            return { id, type: item.type, name: withLangBadge(item.searchTitle || item.title, item.languageTag), poster, posterShape: 'poster' };
         }));
         enriched.push(...batchResults);
     }
@@ -525,9 +522,7 @@ async function enrichSearchResults(items, config) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
-                    id, type: item.type,
-                    name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag),
-                    poster, background: tmdb.backdrop,
+                    id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
                     languageTag: item.languageTag,
                     description: tmdb.description, releaseInfo: tmdb.year, imdbRating: tmdb.rating,
                     genres: tmdb.genres, runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
@@ -535,11 +530,7 @@ async function enrichSearchResults(items, config) {
                 });
             }
 
-            return {
-                id, type: item.type,
-                name: withLangBadge(item.searchTitle || item.title, item.languageTag),
-                poster, posterShape: 'poster'
-            };
+            return { id, type: item.type, name: withLangBadge(item.searchTitle || item.title, item.languageTag), poster, posterShape: 'poster' };
         }));
         metas.push(...batchResults);
     }
@@ -592,10 +583,10 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     });
 
     builder.defineMetaHandler(async ({ type, id }) => {
-        return {
-            meta: metaCache.get(`${type}:${id}`) || null
-        };
-    });
+    return {
+        meta: metaCache.get(`${type}:${id}`) || null
+    };
+});
 
     return builder.getInterface();
 };
