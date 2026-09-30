@@ -193,22 +193,42 @@ function getLanguageTag(item) {
 }
 
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
-    if (!imdbId || !/^tt\d+$/i.test(imdbId)) {
-        return null;
-    }
+    if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
 
     const safeId = encodeURIComponent(imdbId);
-    const tag = String(languageTag || 'NONE').toLowerCase();
-    const cleanBaseUrl = String(baseUrl || '').replace(/\/+$/, '');
 
-    // VF/VOSTFR : notre serveur récupère BetterPoster
-    // puis ajoute le badge.
-    if (
-        cleanBaseUrl &&
-        ['dub', 'sub', 'dub_sub'].includes(tag)
-    ) {
-        return `${cleanBaseUrl}/poster/${safeId}/${tag}.svg`;
+    // Sans détection linguistique : BetterPoster original
+    if (!languageTag || languageTag === 'NONE') {
+        return BETTERPOSTER_BASE + safeId + '.jpg';
     }
+
+    // Notre serveur génère l'affiche BetterPoster + badge.
+    const normalizedTag = String(languageTag).toUpperCase();
+
+    let badgeTag = null;
+
+    if (normalizedTag === 'DUB') {
+        badgeTag = 'dub';
+    } else if (normalizedTag === 'SUB') {
+        badgeTag = 'sub';
+    } else if (normalizedTag === 'DUB_SUB') {
+        badgeTag = 'dub_sub';
+    }
+
+    // Tag inconnu : on garde BetterPoster pur
+    if (!badgeTag) {
+        return BETTERPOSTER_BASE + safeId + '.jpg';
+    }
+
+    // baseUrl = URL publique de Frankenstream
+    const base = String(baseUrl || '').replace(/\/+$/, '');
+
+    if (!base) {
+        return BETTERPOSTER_BASE + safeId + '.jpg';
+    }
+
+    return `${base}/poster/${safeId}/${badgeTag}.svg`;
+}
 
     // Sans information de langue :
     // BetterPoster DIRECT, jamais TMDB.
