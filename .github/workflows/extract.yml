@@ -49,9 +49,13 @@ jobs:
               return root + '/poster/' + safeId + '/' + languageTag.toLowerCase() + '.svg';"""
           new_bp = """    // BetterPoster for every item. Do not route posters through the optional SVG layer.
               return BETTERPOSTER_BASE + safeId + '.jpg';"""
-          if old_bp not in s:
-              raise SystemExit('BetterPoster block not found')
-          s = s.replace(old_bp, new_bp, 1)
+          if old_bp in s:
+    s = s.replace(old_bp, new_bp, 1)
+    print('Legacy BetterPoster block replaced.')
+elif new_bp in s:
+    print('BetterPoster block already correct; nothing to repair.')
+else:
+    raise SystemExit('BetterPoster block not found in either legacy or corrected form')
 
           old_search = "        let poster = $item.find('img').first().attr('src') || '';"
           new_search = """        const $img = $item.find('img').first();
