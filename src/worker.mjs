@@ -314,10 +314,27 @@ async function enrichItem(item, config, ctx, shouldUseTmdb) {
             runtime: tmdb.runtime ? `${tmdb.runtime} min` : undefined,
             behaviorHints: item.type === 'movie' ? { defaultVideoId: id, hasScheduledVideos: false } : undefined
         };
-    } else {
-        meta = await resolveCinemetaMeta(item.searchTitle, item.type) || meta;
-        const frenchDescription = await fetchFrenchStreamDescription(item.href);
-        if (frenchDescription) meta = { ...meta, description: frenchDescription };
+   } else {
+    meta = await resolveCinemetaMeta(item.searchTitle, item.type) || meta;
+
+    // BetterPoster + badges même lorsque TMDB est désactivé
+    const imdbId =
+        /^tt\d+$/i.test(meta.id || '') ? meta.id :
+        /^tt\d+$/i.test(meta.imdbId || '') ? meta.imdbId :
+        null;
+
+    const enhancedPoster = imdbId
+        ? betterPosterUrl(imdbId, item.languageTag, config.posterBaseUrl)
+        : null;
+
+    if (enhancedPoster) {
+        meta = { ...meta, poster: enhancedPoster };
+    }
+
+    const frenchDescription = await fetchFrenchStreamDescription(item.href);
+    if (frenchDescription) {
+        meta = { ...meta, description: frenchDescription };
+    }
     }
 
     ctx?.waitUntil(putMeta(meta));
