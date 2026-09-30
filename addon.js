@@ -198,11 +198,22 @@ function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
     }
 
     const safeId = encodeURIComponent(imdbId);
+    const tag = String(languageTag || 'NONE').toLowerCase();
+    const cleanBaseUrl = String(baseUrl || '').replace(/\/+$/, '');
 
-    // Pas de badge : BetterPoster direct.
-    if (!languageTag || languageTag === 'NONE') {
-        return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+    // VF/VOSTFR : notre serveur récupère BetterPoster
+    // puis ajoute le badge.
+    if (
+        cleanBaseUrl &&
+        ['dub', 'sub', 'dub_sub'].includes(tag)
+    ) {
+        return `${cleanBaseUrl}/poster/${safeId}/${tag}.svg`;
     }
+
+    // Sans information de langue :
+    // BetterPoster DIRECT, jamais TMDB.
+    return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+}
 
     const cleanBaseUrl = String(baseUrl || '').replace(/\/+$/, '');
 
