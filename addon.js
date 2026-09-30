@@ -193,10 +193,26 @@ function getLanguageTag(item) {
 }
 
 function betterPosterUrl(imdbId, languageTag, baseUrl = '') {
-    if (!imdbId || !/^tt\d+$/i.test(imdbId)) return null;
+    if (!imdbId || !/^tt\d+$/i.test(imdbId)) {
+        return null;
+    }
+
     const safeId = encodeURIComponent(imdbId);
-    // BetterPoster for every item. Do not route posters through the optional SVG layer.
-    return BETTERPOSTER_BASE + safeId + '.jpg';
+
+    // Pas de badge : BetterPoster direct.
+    if (!languageTag || languageTag === 'NONE') {
+        return `${BETTERPOSTER_BASE}${safeId}.jpg`;
+    }
+
+    const cleanBaseUrl = String(baseUrl || '').replace(/\/+$/, '');
+
+    // Avec badge : notre serveur récupère BetterPoster
+    // et ajoute le badge DUB/SUB.
+    if (cleanBaseUrl) {
+        return `${cleanBaseUrl}/poster/${safeId}/${languageTag.toLowerCase()}.svg`;
+    }
+
+    return `${BETTERPOSTER_BASE}${safeId}.jpg`;
 }
 
 // ============================================================================
