@@ -1,6 +1,8 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey } = require('./addon');
 
+const fetch = require('node-fetch');
+
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
