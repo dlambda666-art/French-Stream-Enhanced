@@ -562,6 +562,7 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     });
 
     builder.defineMetaHandler(async ({ type, id }) => {
+    if (id.startsWith('tt') || id.startsWith('tmdb:')) return { meta: null };
     return { meta: metaCache.get(`${type}:${id}`) || null };
 });
 
