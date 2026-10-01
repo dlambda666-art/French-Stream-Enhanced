@@ -181,6 +181,28 @@ function detectWithin(id, type, ms) {
     ]);
 }
 
+// Diagnostic (lab) : montre ou la page French Stream ecrit VF / VOSTFR.
+function contexts(text, max) {
+    const found = [];
+    const pattern = /VOSTFR|TRUEFRENCH|\bVFF?\b|\bVFQ\b|\bFRENCH\b|Version|Langue/gi;
+    let match;
+    while ((match = pattern.exec(text)) && found.length < max) {
+        found.push(text.slice(Math.max(0, match.index - 60), match.index + 60).replace(/\s+/g, ' '));
+    }
+    return found;
+}
+
+async function describePage(item) {
+    const href = /^https?:/i.test(item.href) ? item.href : `https://maj.french-stream.pink${item.href.startsWith('/') ? '' : '/'}${item.href}`;
+    try {
+        const response = await fetch(href, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await response.text();
+        return { href, status: response.status, length: html.length, hits: contexts(html, 15) };
+    } catch (error) {
+        return { href, error: error.message };
+    }
+}
+
 // Diagnostic (lab) : refait la detection pas a pas, sans cache.
 async function explain(id, type) {
     const report = { id, type, tmdbKey: Boolean(tmdbKey()), steps: [] };
@@ -191,11 +213,14 @@ async function explain(id, type) {
         const { searchFrenchStream, normalizeSearchValue } = require('./addon');
         for (const title of info.titles) {
             const items = await searchFrenchStream(title, info.type);
+            const matched = items.find(item => sameTitle(item.searchTitle, title, normalizeSearchValue));
+            if (matched && !report.page) report.page = await describePage(matched);
             report.steps.push({
                 search: title,
                 results: items.map(item => ({
                     title: item.searchTitle,
                     tag: item.languageTag,
+                    text: item.rawText,
                     match: sameTitle(item.searchTitle, title, normalizeSearchValue)
                 }))
             });
