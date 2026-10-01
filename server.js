@@ -1,6 +1,6 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey } = require('./addon');
-const { detectWithin } = require('./language-detector');
+const { detectWithin, explain: explainDetection } = require('./language-detector');
 const { addLanguageBadges } = require('./poster-badge');
 
 const fetch = require('node-fetch');
@@ -396,6 +396,21 @@ const server = http.createServer(
             pathname.match(
                 /^\/poster\/(movie|series)\/(tt\d+|\d+)\.jpg$/i
             );
+
+        const debugMatch =
+            pathname.match(
+                /^\/poster-debug\/(movie|series)\/(tt\d+|\d+)$/i
+            );
+
+        if (debugMatch) {
+            const report = await explainDetection(
+                debugMatch[2],
+                debugMatch[1].toLowerCase()
+            );
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            return res.end(JSON.stringify(report, null, 2));
+        }
 
         if (languagePosterMatch) {
             return serveLanguagePoster(

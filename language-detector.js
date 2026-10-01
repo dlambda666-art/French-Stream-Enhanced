@@ -181,4 +181,30 @@ function detectWithin(id, type, ms) {
     ]);
 }
 
-module.exports = { detect, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
+// Diagnostic (lab) : refait la detection pas a pas, sans cache.
+async function explain(id, type) {
+    const report = { id, type, tmdbKey: Boolean(tmdbKey()), steps: [] };
+    try {
+        const info = await lookupTitle(id, type);
+        report.tmdb = info;
+        if (!info) return report;
+        const { searchFrenchStream, normalizeSearchValue } = require('./addon');
+        for (const title of info.titles) {
+            const items = await searchFrenchStream(title, info.type);
+            report.steps.push({
+                search: title,
+                results: items.map(item => ({
+                    title: item.searchTitle,
+                    tag: item.languageTag,
+                    match: sameTitle(item.searchTitle, title, normalizeSearchValue)
+                }))
+            });
+        }
+    } catch (error) {
+        report.error = error.message;
+    }
+    report.cached = getKnown(/^tt\d+$/i.test(id) ? id : `${type}:${id}`);
+    return report;
+}
+
+module.exports = { detect, explain, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
