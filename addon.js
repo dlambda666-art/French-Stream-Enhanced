@@ -403,8 +403,12 @@ function scrapeSearchItems(html, type) {
 
         if (!title || !href || itemType !== type) return;
         if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
-        const languageTag = getLanguageTag({ title, languageText: title });
-        items.push({ title, poster, href, type: itemType, languageText: title, languageTag, isVostfrOnly: languageTag === 'SUB', rawText: $item.text().replace(/\s+/g, ' ').trim() });
+        // La recherche n'affiche pas la langue, mais l'adresse de la page la donne
+        // (ex. ...-film-streaming-complet-vf.html / ...-vostfr.html).
+        const pageName = String(href).split(/[?#]/)[0].split('/').pop().replace(/\.html?$/i, '');
+        const languageText = `${title} ${pageName}`;
+        const languageTag = getLanguageTag({ title, languageText });
+        items.push({ title, poster, href, type: itemType, languageText, languageTag, isVostfrOnly: languageTag === 'SUB', rawText: $item.text().replace(/\s+/g, ' ').trim() });
     });
 
     return items;
