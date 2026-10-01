@@ -1,6 +1,6 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey, prepareExternalCatalogs } = require('./addon');
-const { detectWithin, explain: explainDetection } = require('./language-detector');
+const { detectWithin, explain: explainDetection, lookupPosterInfo } = require('./language-detector');
 const { addLanguageBadges } = require('./poster-badge');
 
 const fetch = require('node-fetch');
@@ -288,10 +288,13 @@ function redirect(res, url, cacheControl) {
 
 async function serveLanguagePoster(res, type, id) {
     const result = await detectWithin(id, type, DETECT_WAIT_MS, { priority: true });
-    const imdbId = /^tt\d+$/i.test(id) ? id : result?.imdbId;
+    // Pas encore verifie : affiche (et IMDb pour un id TMDB) pris directement
+    // sur TMDB, en secours si BetterPoster n'a pas l'affiche.
+    const tmdbInfo = !result ? await lookupPosterInfo(id, type) : null;
+    const imdbId = /^tt\d+$/i.test(id) ? id : result?.imdbId || tmdbInfo?.imdbId;
     const candidates = [
         imdbId ? `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg` : null,
-        result?.poster
+        result?.poster || tmdbInfo?.poster
     ].filter(Boolean);
 
     if (!candidates.length) {

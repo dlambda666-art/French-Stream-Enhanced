@@ -109,6 +109,26 @@ async function lookupTitle(id, type) {
     return toTitleInfo(details, mediaType);
 }
 
+// Affiche et IMDb d'un titre via TMDB seulement (rapide, sans French Stream),
+// pour les ids TMDB dont la verification n'est pas encore faite.
+const posterInfoCache = new Map();
+
+async function lookupPosterInfo(id, type) {
+    if (!isEnabled()) return null;
+    const key = `${type}:${id}`;
+    if (posterInfoCache.has(key)) return posterInfoCache.get(key);
+    try {
+        const info = await lookupTitle(id, type);
+        const value = info ? { poster: info.poster, imdbId: info.imdbId } : null;
+        if (posterInfoCache.size >= MAX_ENTRIES) posterInfoCache.delete(posterInfoCache.keys().next().value);
+        posterInfoCache.set(key, value);
+        return value;
+    } catch (error) {
+        console.error('Affiche TMDB:', id, error.message);
+        return null;
+    }
+}
+
 // ----------------------------------------------------------------------------
 // French Stream : titre -> langue
 // ----------------------------------------------------------------------------
@@ -317,4 +337,4 @@ async function explain(id, type) {
     return report;
 }
 
-module.exports = { detect, explain, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
+module.exports = { detect, explain, lookupPosterInfo, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
