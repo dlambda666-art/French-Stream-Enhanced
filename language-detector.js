@@ -112,8 +112,15 @@ async function lookupTitle(id, type) {
 // French Stream : titre -> langue
 // ----------------------------------------------------------------------------
 
+// French Stream numerote parfois le premier film d'une saga
+// ("Conjuring 1 : Les Dossiers Warren") : un "1" isole est ignore.
+// Les autres numeros comptent ("Scream" n'est pas "Scream 2").
+function canonicalTitle(value, normalize) {
+    return normalize(value).split(' ').filter(word => word && word !== '1').join(' ');
+}
+
 function sameTitle(a, b, normalize) {
-    return Boolean(a) && Boolean(b) && normalize(a) === normalize(b);
+    return Boolean(a) && Boolean(b) && canonicalTitle(a, normalize) === canonicalTitle(b, normalize);
 }
 
 // Films : l'annee affichee par French Stream ("Titre (2014)") doit coller a

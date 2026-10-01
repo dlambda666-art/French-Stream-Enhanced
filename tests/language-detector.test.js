@@ -11,6 +11,8 @@ const fakeSearchResults = {
     ],
     'Inconnu au bataillon': [{ searchTitle: 'Inconnu au bataillon 2', languageTag: 'DUB' }],
     'Shogun': [{ searchTitle: 'Shogun', languageTag: 'SUB' }],
+    'Conjuring : Les Dossiers Warren': [{ searchTitle: 'Conjuring 1 : Les Dossiers Warren', languageTag: 'DUB', rawText: 'Conjuring 1 : Les Dossiers Warren (2013)' }],
+    'Scream': [{ searchTitle: 'Scream 2', languageTag: 'DUB', rawText: 'Scream 2 (1997)' }],
     'Halloween': [{ searchTitle: 'Halloween', languageTag: 'DUB', rawText: 'Halloween (2018)' }]
 };
 
@@ -19,6 +21,8 @@ const fakeTmdb = {
     '/find/tt0000002': { movie_results: [{ title: 'Inconnu au bataillon', original_title: 'Unknown', poster_path: null }], tv_results: [] },
     '/find/tt0077651': { movie_results: [{ title: 'Halloween', original_title: 'Halloween', release_date: '1978-10-25' }], tv_results: [] },
     '/find/tt1502407': { movie_results: [{ title: 'Halloween', original_title: 'Halloween', release_date: '2018-10-18' }], tv_results: [] },
+    '/find/tt1457767': { movie_results: [{ title: 'Conjuring : Les Dossiers Warren', original_title: 'The Conjuring', release_date: '2013-07-18' }], tv_results: [] },
+    '/find/tt0117571': { movie_results: [{ title: 'Scream', original_title: 'Scream', release_date: '1996-12-20' }], tv_results: [] },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -33,7 +37,7 @@ Module._load = function (request, parent, isMain) {
     }
     if (request === './addon') {
         return {
-            normalizeSearchValue: value => value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(),
+            normalizeSearchValue: value => value.normalize('NFD').replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').replace(/[̀-ͯ]/g, '').toLowerCase().trim(),
             searchFrenchStream: async (title, type) => {
                 searches.push(`${type}:${title}`);
                 return fakeSearchResults[title] || [];
@@ -68,6 +72,10 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     // Remake : meme titre, annee differente -> pas confondu
     assert.equal((await detector.detect('tt0077651', 'movie')).tag, 'NONE');
     assert.equal((await detector.detect('tt1502407', 'movie')).tag, 'DUB');
+
+    // "1" ajoute par French Stream -> trouve ; une suite ("Scream 2") -> non
+    assert.equal((await detector.detect('tt1457767', 'movie')).tag, 'DUB');
+    assert.equal((await detector.detect('tt0117571', 'movie')).tag, 'NONE');
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');
