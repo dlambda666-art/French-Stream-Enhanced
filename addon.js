@@ -1,6 +1,7 @@
 const { addonBuilder, serveHTTP, getRouter } = require('stremio-addon-sdk');
 const cheerio = require('cheerio');
 const fetch = require('node-fetch');
+const { remember: rememberLanguage, detectWithin, useTmdbKey } = require('./language-detector');
 
 // ============================================================================
 // CONFIGURATION & CATALOGS
@@ -141,7 +142,7 @@ const DEFAULT_CATALOGS = ['derniers-films', 'films-action', 'dernieres-series', 
 // ============================================================================
 
 function parseConfig(configStr) {
-    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false };
+    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externals: [] };
     try {
         const decoded = Buffer.from(configStr, 'base64').toString();
         const config = JSON.parse(decoded);
@@ -149,11 +150,22 @@ function parseConfig(configStr) {
             tmdbKey: config.t || null,
             rpdbKey: config.r ? 't0-free-rpdb' : null,
             catalogs: Array.isArray(config.c) ? config.c.filter(id => ALL_CATALOGS[id]) : DEFAULT_CATALOGS,
-            vfOnly: config.v || false
+            vfOnly: config.v || false,
+            externals: parseExternals(config.x)
         };
     } catch (e) {
-        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false };
+        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externals: [] };
     }
+}
+
+// Catalogues d'autres addons (ex. Scary Only) passes au detecteur de langue.
+// Format dans la config : { u: base de l'addon, t: type, i: id du catalogue, n: nom }
+function parseExternals(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+        .filter(ext => ext && /^https?:\/\//i.test(ext.u) && ['movie', 'series'].includes(ext.t) && ext.i)
+        .slice(0, 20)
+        .map(ext => ({ u: String(ext.u).replace(/\/+$/, ''), t: ext.t, i: String(ext.i), n: String(ext.n || ext.i) }));
 }
 
 function cleanSeriesTitle(title) {
@@ -439,6 +451,7 @@ async function getCatalogItems(catalogId, config) {
             let poster = item.poster;
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
+                rememberLanguage(tmdb.imdbId, item.languageTag);
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
@@ -454,6 +467,68 @@ async function getCatalogItems(catalogId, config) {
     }
     cache.set(cacheKey, enriched);
     return enriched;
+}
+
+// ============================================================================
+// CATALOGUES EXTERNES (ex. Scary Only) + DETECTION VF / VOSTFR
+// ----------------------------------------------------------------------------
+// Chaque titre passe par le detecteur (recherche sur French Stream). Les
+// recherches se font quelques-unes a la fois : au premier affichage, seuls les
+// titres deja connus apparaissent, le catalogue se complete aux suivants.
+// ============================================================================
+
+const EXTERNAL_WAIT_MS = 8000;
+const EXTERNAL_MAX_ITEMS = 100;
+const externalCache = new Map();
+
+function detectionIdOf(meta) {
+    const id = String(meta.imdb_id || meta.id || '');
+    const imdb = id.match(/^tt\d+/i);
+    if (imdb) return imdb[0];
+    const tmdb = id.match(/^tmdb:(\d+)/i);
+    return tmdb ? tmdb[1] : null;
+}
+
+async function getExternalCatalogItems(ext, config) {
+    const cacheKey = `${ext.u}|${ext.t}|${ext.i}|${config.vfOnly}`;
+    const cached = externalCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) return cached;
+
+    let metas = [];
+    try {
+        const response = await fetch(`${ext.u}/catalog/${ext.t}/${encodeURIComponent(ext.i)}.json`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' }
+        });
+        const data = await response.json();
+        metas = Array.isArray(data.metas) ? data.metas.slice(0, EXTERNAL_MAX_ITEMS) : [];
+    } catch (e) {
+        console.error('Catalogue externe:', ext.u, e.message);
+    }
+
+    const detections = await Promise.all(metas.map(meta => {
+        const id = detectionIdOf(meta);
+        return id ? detectWithin(id, ext.t, EXTERNAL_WAIT_MS) : Promise.resolve({ tag: 'NONE' });
+    }));
+
+    const items = [];
+    metas.forEach((meta, index) => {
+        const tag = detections[index]?.tag || null;
+        if (config.vfOnly && tag !== 'DUB' && tag !== 'DUB_SUB') return;
+        const imdbId = detectionIdOf(meta);
+        items.push({
+            ...meta,
+            type: ext.t,
+            name: withLangBadge(meta.name, tag || 'NONE'),
+            poster: betterPosterUrl(imdbId) || meta.poster,
+            posterShape: 'poster'
+        });
+    });
+
+    // Tant que des titres restent a verifier, on garde le resultat peu de temps.
+    const complete = detections.every(Boolean);
+    const result = { items, complete, expires: Date.now() + (complete ? CACHE_TTL : 60 * 1000) };
+    externalCache.set(cacheKey, result);
+    return result;
 }
 
 // ============================================================================
@@ -520,6 +595,7 @@ async function enrichSearchResults(items, config) {
 
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
+                rememberLanguage(tmdb.imdbId, item.languageTag);
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
@@ -560,6 +636,11 @@ function createManifest(config) {
         idPrefixes: ['tt', 'tmdb:', 'fs:'],
         catalogs: [
             ...selected,
+            ...config.externals.map((ext, index) => ({
+                type: ext.t,
+                id: `fs-ext-${index}`,
+                name: `${config.vfOnly ? 'VF' : 'FR'} · ${ext.n}`
+            })),
             { type: 'movie', id: 'fs-search', name: 'Recherche French Stream - Films', extra: [{ name: 'search', isRequired: true }] },
             { type: 'series', id: 'fs-search', name: 'Recherche French Stream - Séries', extra: [{ name: 'search', isRequired: true }] }
         ],
@@ -570,12 +651,20 @@ function createManifest(config) {
 const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_URL || '') => {
     const config = parseConfig(configStr);
     config.posterBaseUrl = posterBaseUrl;
+    useTmdbKey(config.tmdbKey);
     const builder = new addonBuilder(createManifest(config));
 
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
         if (id === 'fs-search' && extra.search) {
             const results = await searchFrenchStream(extra.search, type);
             return { metas: await enrichSearchResults(results, config) };
+        }
+        const external = id.match(/^fs-ext-(\d+)$/);
+        if (external) {
+            const ext = config.externals[Number(external[1])];
+            if (!ext) return { metas: [] };
+            const { items, complete } = await getExternalCatalogItems(ext, config);
+            return { metas: items, cacheMaxAge: complete ? 3600 : 60 };
         }
         const catalogId = id.replace('fs-', '');
         const items = await getCatalogItems(catalogId, config);
@@ -591,4 +680,4 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     return builder.getInterface();
 };
 
-module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag };
+module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, normalizeSearchValue };

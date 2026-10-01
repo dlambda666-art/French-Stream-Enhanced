@@ -57,7 +57,8 @@
             font-size: 0.9rem;
         }
 
-        input[type="text"] {
+        input[type="text"],
+        textarea {
             width: 100%;
             padding: 0.75rem;
             border-radius: 0.5rem;
@@ -196,6 +197,12 @@
         <div class="checkbox-group group">
             <input type="checkbox" id="vfOnly">
             <label for="vfOnly">VF uniquement (exclure VOSTFR seul)</label>
+        </div>
+
+        <div class="group">
+            <label for="externals">Catalogues d'autres addons à passer au détecteur VF (optionnel)</label>
+            <textarea id="externals" rows="3" placeholder="Une URL de manifest par ligne, ex. https://.../manifest.json"></textarea>
+            <p class="option-hint">Frank vérifie chaque titre sur French Stream et ajoute [VF] / [VOSTFR]. Avec « VF uniquement », il ne garde que les titres dispo en VF. Les catalogues se complètent au fil des affichages.</p>
         </div>
 
         <label class="catalog-section-title">Catalogues films à afficher</label>
@@ -386,6 +393,37 @@
             return testTmdbKey();
         }
 
+        let externalCatalogs = [];
+
+        // Lit les manifests collés et garde leurs catalogues films / séries
+        // utilisables sans filtre obligatoire (genre, recherche...).
+        async function loadExternalCatalogs() {
+            const urls = document.getElementById('externals').value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean);
+
+            const catalogs = [];
+            for (const url of urls) {
+                const manifestUrl = url.replace(/^stremio:\/\//i, 'https://');
+                try {
+                    const response = await fetch(manifestUrl);
+                    const manifest = await response.json();
+                    const base = manifestUrl.replace(/\/manifest\.json.*$/i, '');
+                    (manifest.catalogs || []).forEach(catalog => {
+                        const required = (catalog.extra || []).some(extra => extra.isRequired);
+                        if (required || !['movie', 'series'].includes(catalog.type)) return;
+                        catalogs.push({ u: base, t: catalog.type, i: catalog.id, n: catalog.name || catalog.id });
+                    });
+                } catch (error) {
+                    showMessage(`Impossible de lire ce manifest : ${url}`, true);
+                    return false;
+                }
+            }
+            externalCatalogs = catalogs.slice(0, 20);
+            return true;
+        }
+
         function getConfiguredUrls() {
             const apiUrl = getApiUrl();
             const tmdb = document.getElementById('tmdb').value.trim();
@@ -406,7 +444,8 @@
                 t: tmdb,
                 r: rpdb,
                 c: selected,
-                v: document.getElementById('vfOnly').checked
+                v: document.getElementById('vfOnly').checked,
+                x: externalCatalogs
             };
 
             const configStr = toBase64Url(JSON.stringify(config));
@@ -417,6 +456,7 @@
 
         async function installStremio() {
             if (!(await ensureTmdbKeyIsValid())) return;
+            if (!(await loadExternalCatalogs())) return;
             const urls = getConfiguredUrls();
             if (!urls) return;
             showMessage(urls.stremioUrl, false);
@@ -425,6 +465,7 @@
 
         async function copyManifestLink() {
             if (!(await ensureTmdbKeyIsValid())) return;
+            if (!(await loadExternalCatalogs())) return;
             const urls = getConfiguredUrls();
             if (!urls) return;
 

@@ -1,5 +1,7 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey } = require('./addon');
+const { detectWithin } = require('./language-detector');
+const { addLanguageBadges } = require('./poster-badge');
 
 const fetch = require('node-fetch');
 
@@ -260,6 +262,81 @@ async function serveEnhancedPoster(
 }
 
 // ============================================================
+// AFFICHE POUR N'IMPORTE QUEL TITRE (badges VF / VOSTFR)
+// /poster/{type}/{imdb_id ou tmdb_id}.jpg  -> pour "Custom poster" d'aiometa
+// ============================================================
+
+const DETECT_WAIT_MS = 4000;
+const BADGED_CACHE = new Map();
+const BADGED_CACHE_MAX = 300;
+
+async function fetchImage(url) {
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' }
+    });
+    if (!response.ok) throw new Error(`Image HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+}
+
+function redirect(res, url, cacheControl) {
+    res.statusCode = 302;
+    res.setHeader('Location', url);
+    res.setHeader('Cache-Control', cacheControl);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.end();
+}
+
+async function serveLanguagePoster(res, type, id) {
+    const result = await detectWithin(id, type, DETECT_WAIT_MS);
+    const imdbId = /^tt\d+$/i.test(id) ? id : result?.imdbId;
+    const candidates = [
+        imdbId ? `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg` : null,
+        result?.poster
+    ].filter(Boolean);
+
+    if (!candidates.length) {
+        res.statusCode = 404;
+        return res.end('Poster not found');
+    }
+
+    // Langue inconnue pour l'instant (detection en cours) ou pas de VF/VOSTFR :
+    // affiche normale. "no-store" tant qu'on ne sait pas, pour que le badge
+    // puisse apparaitre au prochain affichage.
+    if (!result || result.tag === 'NONE') {
+        return redirect(
+            res,
+            candidates[0],
+            result ? 'public, max-age=86400' : 'no-store'
+        );
+    }
+
+    const cacheKey = `${imdbId || id}:${result.tag}`;
+    let body = BADGED_CACHE.get(cacheKey);
+
+    if (!body) {
+        for (const url of candidates) {
+            try {
+                body = await addLanguageBadges(await fetchImage(url), result.tag);
+                break;
+            } catch (error) {
+                console.error('Poster badge error:', url, error.message);
+            }
+        }
+        if (!body) return redirect(res, candidates[0], 'no-store');
+        if (BADGED_CACHE.size >= BADGED_CACHE_MAX) {
+            BADGED_CACHE.delete(BADGED_CACHE.keys().next().value);
+        }
+        BADGED_CACHE.set(cacheKey, body);
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=259200');
+    return res.end(body);
+}
+
+// ============================================================
 // SERVER
 // ============================================================
 
@@ -314,6 +391,19 @@ const server = http.createServer(
             pathname.match(
                 /^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i
             );
+
+        const languagePosterMatch =
+            pathname.match(
+                /^\/poster\/(movie|series)\/(tt\d+|\d+)\.jpg$/i
+            );
+
+        if (languagePosterMatch) {
+            return serveLanguagePoster(
+                res,
+                languagePosterMatch[1].toLowerCase(),
+                languagePosterMatch[2]
+            );
+        }
 
         if (posterMatch) {
             const imdbId =
