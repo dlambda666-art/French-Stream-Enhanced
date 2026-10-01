@@ -70,7 +70,7 @@ function configString(config) {
 
     const result = await handlers.catalog({ type: 'movie', id: 'fs-ext-0', extra: {} });
     assert.equal(fetched[1], 'https://scary.example/abc/catalog/movie/scary-movies.json');
-    assert.deepEqual(result.metas.map(m => m.name), ['[VF] Film doublé', '[VF+VOSTFR] Film id TMDB']);
+    assert.deepEqual(result.metas.map(m => m.name), ['[VF] Film doublé', '[VF] Film id TMDB']);
     assert.equal(result.metas[0].poster, 'https://frank.example/poster/movie/tt0000001.jpg');
     assert.equal(result.metas[1].poster, 'https://frank.example/poster/movie/44.jpg');
     // Un titre encore inconnu -> resultat garde peu de temps
@@ -81,9 +81,9 @@ function configString(config) {
     const all = await handlers.catalog({ type: 'movie', id: 'fs-ext-0', extra: {} });
     assert.deepEqual(all.metas.map(m => m.name), [
         '[VF] Film doublé',
-        '[VOSTFR] Film sous-titré',
+        'Film sous-titré',
         'Film introuvable',
-        '[VF+VOSTFR] Film id TMDB',
+        '[VF] Film id TMDB',
         'Film encore inconnu'
     ]);
 

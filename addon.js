@@ -559,7 +559,8 @@ async function getExternalCatalogItems(ext, config) {
         items.push({
             ...meta,
             type: ext.t,
-            name: withLangBadge(meta.name, tag || 'NONE'),
+            // Seule la VF est signalee dans le titre.
+            name: withLangBadge(meta.name, tag === 'DUB' || tag === 'DUB_SUB' ? 'DUB' : 'NONE'),
             // Affiche badgee de Frank (VF / VOSTFR colle dans l'image).
             poster: imdbId && config.posterBaseUrl
                 ? `${config.posterBaseUrl}/poster/${ext.t}/${imdbId}.jpg`

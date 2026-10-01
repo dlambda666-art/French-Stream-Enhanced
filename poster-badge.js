@@ -1,5 +1,5 @@
 // ============================================================================
-// AFFICHE + BADGE VF / VOSTFR EN VRAIE IMAGE (JPG)
+// AFFICHE + BADGE VF EN VRAIE IMAGE (JPG)
 // ----------------------------------------------------------------------------
 // Les affiches SVG ne s'affichaient pas dans Nuvio : on colle donc le badge
 // directement dans l'image avec sharp. Les badges sont des PNG pre-dessines
@@ -10,14 +10,13 @@ const path = require('path');
 const sharp = require('sharp');
 
 const BADGE_FILES = {
-    VF: path.join(__dirname, 'assets', 'badge-vf.png'),
-    VOSTFR: path.join(__dirname, 'assets', 'badge-vostfr.png')
+    VF: path.join(__dirname, 'assets', 'badge-vf.png')
 };
 
 const BADGES = {
     DUB: ['VF'],
-    SUB: ['VOSTFR'],
-    DUB_SUB: ['VF', 'VOSTFR']
+    // Seule la VF est signalee (pas de badge VOSTFR).
+    DUB_SUB: ['VF']
 };
 
 // Renvoie un JPG : l'affiche avec ses badges a gauche, sous le bandeau du haut.

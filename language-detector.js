@@ -87,6 +87,7 @@ function toTitleInfo(item, mediaType) {
         type: mediaType === 'tv' ? 'series' : 'movie',
         titles: [item.title || item.name, item.original_title || item.original_name].filter(Boolean),
         poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+        year: Number(String(item.release_date || item.first_air_date || '').slice(0, 4)) || null,
         imdbId: item.imdb_id || item.external_ids?.imdb_id || null
     };
 }
@@ -115,11 +116,20 @@ function sameTitle(a, b, normalize) {
     return Boolean(a) && Boolean(b) && normalize(a) === normalize(b);
 }
 
+// Films : l'annee affichee par French Stream ("Titre (2014)") doit coller a
+// TMDB, a un an pres, pour ne pas confondre un film et son remake.
+function sameYear(item, info) {
+    if (info.type !== 'movie' || !info.year) return true;
+    const found = String(item.rawText || item.title || '').match(/\((19|20)\d{2}\)/);
+    if (!found) return true;
+    return Math.abs(Number(found[0].slice(1, 5)) - info.year) <= 1;
+}
+
 async function detectOnFrenchStream(info) {
     const { searchFrenchStream, normalizeSearchValue } = require('./addon');
     for (const title of info.titles) {
         const items = await searchFrenchStream(title, info.type);
-        const matches = items.filter(item => sameTitle(item.searchTitle, title, normalizeSearchValue));
+        const matches = items.filter(item => sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, info));
         if (matches.length) return mergeTags(matches.map(item => item.languageTag));
     }
     return 'NONE';
@@ -213,7 +223,7 @@ async function explain(id, type) {
         const { searchFrenchStream, normalizeSearchValue } = require('./addon');
         for (const title of info.titles) {
             const items = await searchFrenchStream(title, info.type);
-            const matched = items.find(item => sameTitle(item.searchTitle, title, normalizeSearchValue));
+            const matched = items.find(item => sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, info));
             if (matched && !report.page) report.page = await describePage(matched);
             report.steps.push({
                 search: title,
@@ -221,7 +231,7 @@ async function explain(id, type) {
                     title: item.searchTitle,
                     tag: item.languageTag,
                     text: item.rawText,
-                    match: sameTitle(item.searchTitle, title, normalizeSearchValue)
+                    match: sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, report.tmdb)
                 }))
             });
         }

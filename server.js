@@ -302,7 +302,8 @@ async function serveLanguagePoster(res, type, id) {
     // Langue inconnue pour l'instant (detection en cours) ou pas de VF/VOSTFR :
     // affiche normale. "no-store" tant qu'on ne sait pas, pour que le badge
     // puisse apparaitre au prochain affichage.
-    if (!result || result.tag === 'NONE') {
+    const hasVf = result && (result.tag === 'DUB' || result.tag === 'DUB_SUB');
+    if (!hasVf) {
         return redirect(
             res,
             candidates[0],

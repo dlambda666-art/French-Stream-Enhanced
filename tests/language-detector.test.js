@@ -10,12 +10,15 @@ const fakeSearchResults = {
         { searchTitle: 'Le Comte de Monte-Cristo', languageTag: 'SUB' }
     ],
     'Inconnu au bataillon': [{ searchTitle: 'Inconnu au bataillon 2', languageTag: 'DUB' }],
-    'Shogun': [{ searchTitle: 'Shogun', languageTag: 'SUB' }]
+    'Shogun': [{ searchTitle: 'Shogun', languageTag: 'SUB' }],
+    'Halloween': [{ searchTitle: 'Halloween', languageTag: 'DUB', rawText: 'Halloween (2018)' }]
 };
 
 const fakeTmdb = {
     '/find/tt0000001': { movie_results: [{ title: 'Le Comte de Monte-Cristo', original_title: 'Le Comte de Monte-Cristo', poster_path: '/a.jpg' }], tv_results: [] },
     '/find/tt0000002': { movie_results: [{ title: 'Inconnu au bataillon', original_title: 'Unknown', poster_path: null }], tv_results: [] },
+    '/find/tt0077651': { movie_results: [{ title: 'Halloween', original_title: 'Halloween', release_date: '1978-10-25' }], tv_results: [] },
+    '/find/tt1502407': { movie_results: [{ title: 'Halloween', original_title: 'Halloween', release_date: '2018-10-18' }], tv_results: [] },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -61,6 +64,10 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     const shogun = await detector.detect('42', 'series');
     assert.equal(shogun.tag, 'SUB');
     assert.equal(shogun.imdbId, 'tt0000042');
+
+    // Remake : meme titre, annee differente -> pas confondu
+    assert.equal((await detector.detect('tt0077651', 'movie')).tag, 'NONE');
+    assert.equal((await detector.detect('tt1502407', 'movie')).tag, 'DUB');
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');
