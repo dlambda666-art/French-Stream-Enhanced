@@ -201,7 +201,7 @@ function detectWithin(id, type, ms) {
 // Diagnostic (lab) : montre ou la page French Stream ecrit VF / VOSTFR.
 function contexts(text, max) {
     const found = [];
-    const pattern = /VOSTFR|TRUEFRENCH|\bVFF?\b|\bVFQ\b|\bFRENCH\b|Version|Langue/gi;
+    const pattern = /VOSTFR|TRUEFRENCH|\bVFF?\b|\bVFQ\b|\bFRENCH\b|Version|Langue|Qualit|lecteur|player/gi;
     let match;
     while ((match = pattern.exec(text)) && found.length < max) {
         found.push(text.slice(Math.max(0, match.index - 60), match.index + 60).replace(/\s+/g, ' '));
@@ -214,7 +214,9 @@ async function describePage(item) {
     try {
         const response = await fetch(href, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const html = await response.text();
-        return { href, status: response.status, length: html.length, hits: contexts(html, 15) };
+        // On saute l'en-tete et le menu : on regarde a partir du titre du film.
+        const start = Math.max(0, html.search(/<h1[\s>]/i));
+        return { href, status: response.status, length: html.length, h1At: start, hits: contexts(html.slice(start), 25) };
     } catch (error) {
         return { href, error: error.message };
     }
