@@ -26,6 +26,10 @@ const fakeTmdb = {
     '/find/tt0117571': { movie_results: [{ title: 'Scream', original_title: 'Scream', release_date: '1996-12-20' }], tv_results: [] },
     '/find/tt17526714': { movie_results: [{ title: 'The Substance', original_title: 'The Substance', release_date: '2024-09-07' }], tv_results: [] },
     '/find/tt0000666': { movie_results: [{ title: 'Site bloque', original_title: 'Site bloque', release_date: '2020-01-01' }], tv_results: [] },
+    '/find/tt0000900': { movie_results: [{ id: 900, title: 'Film Netflix', original_title: 'Netflix Movie', release_date: '2023-01-01' }], tv_results: [] },
+    '/movie/900/watch/providers': { results: { FR: { flatrate: [{ provider_name: 'Netflix' }] } } },
+    '/find/tt0000901': { movie_results: [{ id: 901, title: 'Film en location', original_title: 'Rental Movie', release_date: '2023-01-01' }], tv_results: [] },
+    '/movie/901/watch/providers': { results: { FR: { rent: [{ provider_name: 'Apple TV' }] } } },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -103,6 +107,14 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     const shown = detector.detect('tt0000104', 'movie', { priority: true }).then(() => order.push('tt0000104'));
     await Promise.all([...background, shown]);
     assert.ok(order.indexOf('tt0000104') <= 1, `ordre: ${order}`);
+
+    // Dispo en abonnement en France -> VF sans interroger French Stream
+    const beforePlatform = searches.length;
+    assert.equal((await detector.detect('tt0000900', 'movie')).tag, 'DUB');
+    assert.equal(searches.length, beforePlatform);
+    // Seulement en location -> on passe par French Stream (ici : rien)
+    assert.equal((await detector.detect('tt0000901', 'movie')).tag, 'NONE');
+    assert.equal(searches.length, beforePlatform + 2);
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');

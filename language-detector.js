@@ -107,8 +107,28 @@ function toTitleInfo(item, mediaType) {
         titles: [item.title || item.name, item.original_title || item.original_name].filter(Boolean),
         poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
         year: Number(String(item.release_date || item.first_air_date || '').slice(0, 4)) || null,
-        imdbId: item.imdb_id || item.external_ids?.imdb_id || null
+        imdbId: item.imdb_id || item.external_ids?.imdb_id || null,
+        tmdbId: item.id || null,
+        mediaType: mediaType === 'tv' ? 'tv' : 'movie'
     };
+}
+
+// Dispo en abonnement ou gratuitement sur une plateforme en France ou en
+// Belgique (Netflix, Prime, Disney+, Canal+...) : presque toujours en VF.
+// Une seule requete TMDB, rapide, qui evite une recherche French Stream.
+// La location et l'achat ne comptent pas (VO seule possible).
+const PROVIDER_REGIONS = ['FR', 'BE'];
+const PROVIDER_KINDS = ['flatrate', 'free', 'ads'];
+
+async function onFrenchPlatform(info) {
+    if (!info.tmdbId) return false;
+    try {
+        const data = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`);
+        return PROVIDER_REGIONS.some(region =>
+            PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || []).length > 0));
+    } catch (error) {
+        return false; // pas grave : on passe par French Stream
+    }
 }
 
 async function lookupTitle(id, type) {
@@ -233,7 +253,7 @@ async function runDetection(key, id, type) {
         store(key, 'NONE', null, null);
         return getKnown(key);
     }
-    const tag = await detectOnFrenchStream(info);
+    const tag = (await onFrenchPlatform(info)) ? 'DUB' : await detectOnFrenchStream(info);
     store(key, tag, info.poster, info.imdbId);
     if (info.imdbId && info.imdbId !== key) store(info.imdbId, tag, info.poster, info.imdbId);
     return getKnown(key);
@@ -333,6 +353,7 @@ async function explain(id, type) {
         const info = await lookupTitle(id, type);
         report.tmdb = info;
         if (!info) return report;
+        report.frenchPlatform = await onFrenchPlatform(info);
         const { searchFrenchStreamStrict, normalizeSearchValue } = require('./addon');
         for (const title of uniqueTitles(info.titles, normalizeSearchValue)) {
             const items = await searchFrenchStreamStrict(title, info.type);
