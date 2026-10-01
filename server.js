@@ -1,5 +1,7 @@
 const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface, testTMDBKey } = require('./addon');
+const { getAddonInterface, testTMDBKey, prepareExternalCatalogs } = require('./addon');
+const { detectWithin, explain: explainDetection, lookupPosterInfo, loadPersisted } = require('./language-detector');
+const { addLanguageBadges } = require('./poster-badge');
 
 const fetch = require('node-fetch');
 
@@ -260,6 +262,98 @@ async function serveEnhancedPoster(
 }
 
 // ============================================================
+// AFFICHE POUR N'IMPORTE QUEL TITRE (badges VF / VOSTFR)
+// /poster/{type}/{imdb_id ou tmdb_id}.jpg  -> pour "Custom poster" d'aiometa
+// ============================================================
+
+const DETECT_WAIT_MS = 2000;
+const BADGED_CACHE = new Map();
+const BADGED_CACHE_MAX = 1500;
+
+async function fetchImage(url) {
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' }
+    });
+    if (!response.ok) throw new Error(`Image HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+}
+
+function redirect(res, url, cacheControl) {
+    res.statusCode = 302;
+    res.setHeader('Location', url);
+    res.setHeader('Cache-Control', cacheControl);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.end();
+}
+
+async function serveLanguagePoster(res, type, id) {
+    const result = await detectWithin(id, type, DETECT_WAIT_MS, { priority: true });
+    // Pas encore verifie : affiche (et IMDb pour un id TMDB) pris directement
+    // sur TMDB, en secours si BetterPoster n'a pas l'affiche.
+    const tmdbInfo = !result ? await lookupPosterInfo(id, type) : null;
+    const imdbId = /^tt\d+$/i.test(id) ? id : result?.imdbId || tmdbInfo?.imdbId;
+    const candidates = [
+        imdbId ? `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg` : null,
+        result?.poster || tmdbInfo?.poster
+    ].filter(Boolean);
+
+    if (!candidates.length) {
+        res.statusCode = 404;
+        return res.end('Poster not found');
+    }
+
+    // Pas de VF : affiche normale.
+    const hasVf = result && (result.tag === 'DUB' || result.tag === 'DUB_SUB');
+    if (result && !hasVf) {
+        return redirect(res, candidates[0], 'public, max-age=86400');
+    }
+
+    // Verification pas encore finie : on renvoie l'affiche nous-memes, gardee
+    // 10 minutes seulement. Une redirection laissait Nuvio garder l'image sans
+    // badge pour longtemps ; "no-store" la faisait retelecharger sans arret.
+    if (!result) {
+        for (const url of candidates) {
+            try {
+                const body = await fetchImage(url);
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Cache-Control', 'public, max-age=600');
+                return res.end(body);
+            } catch (error) {
+                console.error('Poster fetch error:', url, error.message);
+            }
+        }
+        return redirect(res, candidates[0], 'no-store');
+    }
+
+    const cacheKey = `${imdbId || id}:${result.tag}`;
+    let body = BADGED_CACHE.get(cacheKey);
+
+    if (!body) {
+        for (const url of candidates) {
+            try {
+                body = await addLanguageBadges(await fetchImage(url), result.tag);
+                break;
+            } catch (error) {
+                console.error('Poster badge error:', url, error.message);
+            }
+        }
+        if (!body) return redirect(res, candidates[0], 'no-store');
+        if (BADGED_CACHE.size >= BADGED_CACHE_MAX) {
+            BADGED_CACHE.delete(BADGED_CACHE.keys().next().value);
+        }
+        BADGED_CACHE.set(cacheKey, body);
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=259200');
+    return res.end(body);
+}
+
+// ============================================================
 // SERVER
 // ============================================================
 
@@ -314,6 +408,34 @@ const server = http.createServer(
             pathname.match(
                 /^\/poster\/(tt\d+)\/(dub|sub|dub_sub)\.svg$/i
             );
+
+        const languagePosterMatch =
+            pathname.match(
+                /^\/poster\/(movie|series)\/(tt\d+|\d+)\.jpg$/i
+            );
+
+        const debugMatch =
+            pathname.match(
+                /^\/poster-debug\/(movie|series)\/(tt\d+|\d+)$/i
+            );
+
+        if (debugMatch) {
+            const report = await explainDetection(
+                debugMatch[2],
+                debugMatch[1].toLowerCase()
+            );
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            return res.end(JSON.stringify(report, null, 2));
+        }
+
+        if (languagePosterMatch) {
+            return serveLanguagePoster(
+                res,
+                languagePosterMatch[1].toLowerCase(),
+                languagePosterMatch[2]
+            );
+        }
 
         if (posterMatch) {
             const imdbId =
@@ -429,6 +551,8 @@ const server = http.createServer(
         // ====================================================
 
         try {
+            await prepareExternalCatalogs(configStr);
+
             const addonInterface =
                 getAddonInterface(
                     configStr,
@@ -467,6 +591,8 @@ const server = http.createServer(
 // ============================================================
 // START
 // ============================================================
+
+loadPersisted().catch(error => console.error('Neon:', error.message));
 
 server.listen(
     PORT,

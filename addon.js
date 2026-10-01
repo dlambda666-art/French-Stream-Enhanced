@@ -1,6 +1,7 @@
 const { addonBuilder, serveHTTP, getRouter } = require('stremio-addon-sdk');
 const cheerio = require('cheerio');
 const fetch = require('node-fetch');
+const { remember: rememberLanguage, detectWithin, useTmdbKey } = require('./language-detector');
 
 // ============================================================================
 // CONFIGURATION & CATALOGS
@@ -141,7 +142,7 @@ const DEFAULT_CATALOGS = ['derniers-films', 'films-action', 'dernieres-series', 
 // ============================================================================
 
 function parseConfig(configStr) {
-    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false };
+    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externalManifests: [], externals: [] };
     try {
         const decoded = Buffer.from(configStr, 'base64').toString();
         const config = JSON.parse(decoded);
@@ -149,11 +150,59 @@ function parseConfig(configStr) {
             tmdbKey: config.t || null,
             rpdbKey: config.r ? 't0-free-rpdb' : null,
             catalogs: Array.isArray(config.c) ? config.c.filter(id => ALL_CATALOGS[id]) : DEFAULT_CATALOGS,
-            vfOnly: config.v || false
+            vfOnly: config.v || false,
+            externalManifests: parseManifestUrls(config.x),
+            externals: externalsFromCache(parseManifestUrls(config.x))
         };
     } catch (e) {
-        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false };
+        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externalManifests: [], externals: [] };
     }
+}
+
+// Catalogues d'autres addons (ex. Scary Only) passes au detecteur de langue.
+// La config ne garde que les adresses de leurs manifests (une adresse par
+// catalogue rendait l'URL trop longue : erreur HTTP 431). Frank lit lui-meme
+// les manifests et garde leurs catalogues en memoire.
+const MANIFEST_TTL = 6 * 60 * 60 * 1000;
+const externalManifests = new Map(); // url -> { catalogs, expires }
+
+function parseManifestUrls(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+        .filter(url => typeof url === 'string' && /^https?:\/\/.+\/manifest\.json/i.test(url))
+        .slice(0, 5);
+}
+
+function externalsFromCache(manifestUrls) {
+    const catalogs = [];
+    for (const url of manifestUrls) {
+        catalogs.push(...(externalManifests.get(url)?.catalogs || []));
+    }
+    return catalogs.slice(0, 20);
+}
+
+async function loadExternalManifest(url) {
+    const cached = externalManifests.get(url);
+    if (cached && cached.expires > Date.now()) return;
+    try {
+        const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' } });
+        const manifest = await response.json();
+        const base = url.replace(/\/manifest\.json.*$/i, '');
+        const catalogs = (manifest.catalogs || [])
+            .filter(catalog => ['movie', 'series'].includes(catalog.type) && catalog.id)
+            .filter(catalog => !(catalog.extra || []).some(extra => extra.isRequired))
+            .map(catalog => ({ u: base, t: catalog.type, i: String(catalog.id), n: String(catalog.name || catalog.id) }));
+        externalManifests.set(url, { catalogs, expires: Date.now() + MANIFEST_TTL });
+    } catch (e) {
+        console.error('Manifest externe:', url, e.message);
+        if (!cached) externalManifests.set(url, { catalogs: [], expires: Date.now() + 60 * 1000 });
+    }
+}
+
+// A appeler avant getAddonInterface : charge les manifests de la config.
+async function prepareExternalCatalogs(configStr) {
+    const urls = parseConfig(configStr).externalManifests;
+    await Promise.all(urls.map(loadExternalManifest));
 }
 
 function cleanSeriesTitle(title) {
@@ -391,8 +440,12 @@ function scrapeSearchItems(html, type) {
 
         if (!title || !href || itemType !== type) return;
         if (poster && !poster.startsWith('http')) poster = 'https://maj.french-stream.pink' + poster;
-        const languageTag = getLanguageTag({ title, languageText: title });
-        items.push({ title, poster, href, type: itemType, languageText: title, languageTag, isVostfrOnly: languageTag === 'SUB' });
+        // La recherche n'affiche pas la langue, mais l'adresse de la page la donne
+        // (ex. ...-film-streaming-complet-vf.html / ...-vostfr.html).
+        const pageName = String(href).split(/[?#]/)[0].split('/').pop().replace(/\.html?$/i, '');
+        const languageText = `${title} ${pageName}`;
+        const languageTag = getLanguageTag({ title, languageText });
+        items.push({ title, poster, href, type: itemType, languageText, languageTag, isVostfrOnly: languageTag === 'SUB', rawText: $item.text().replace(/\s+/g, ' ').trim() });
     });
 
     return items;
@@ -439,6 +492,7 @@ async function getCatalogItems(catalogId, config) {
             let poster = item.poster;
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
+                rememberLanguage(tmdb.imdbId, item.languageTag);
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
@@ -454,6 +508,72 @@ async function getCatalogItems(catalogId, config) {
     }
     cache.set(cacheKey, enriched);
     return enriched;
+}
+
+// ============================================================================
+// CATALOGUES EXTERNES (ex. Scary Only) + DETECTION VF / VOSTFR
+// ----------------------------------------------------------------------------
+// Chaque titre passe par le detecteur (recherche sur French Stream). Les
+// recherches se font quelques-unes a la fois : au premier affichage, seuls les
+// titres deja connus apparaissent, le catalogue se complete aux suivants.
+// ============================================================================
+
+const EXTERNAL_WAIT_MS = 8000;
+const EXTERNAL_MAX_ITEMS = 100;
+const externalCache = new Map();
+
+function detectionIdOf(meta) {
+    const id = String(meta.imdb_id || meta.id || '');
+    const imdb = id.match(/^tt\d+/i);
+    if (imdb) return imdb[0];
+    const tmdb = id.match(/^tmdb:(\d+)/i);
+    return tmdb ? tmdb[1] : null;
+}
+
+async function getExternalCatalogItems(ext, config) {
+    const cacheKey = `${ext.u}|${ext.t}|${ext.i}|${config.vfOnly}`;
+    const cached = externalCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) return cached;
+
+    let metas = [];
+    try {
+        const response = await fetch(`${ext.u}/catalog/${ext.t}/${encodeURIComponent(ext.i)}.json`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' }
+        });
+        const data = await response.json();
+        metas = Array.isArray(data.metas) ? data.metas.slice(0, EXTERNAL_MAX_ITEMS) : [];
+    } catch (e) {
+        console.error('Catalogue externe:', ext.u, e.message);
+    }
+
+    const detections = await Promise.all(metas.map(meta => {
+        const id = detectionIdOf(meta);
+        return id ? detectWithin(id, ext.t, EXTERNAL_WAIT_MS) : Promise.resolve({ tag: 'NONE' });
+    }));
+
+    const items = [];
+    metas.forEach((meta, index) => {
+        const tag = detections[index]?.tag || null;
+        if (config.vfOnly && tag !== 'DUB' && tag !== 'DUB_SUB') return;
+        const imdbId = detectionIdOf(meta);
+        items.push({
+            ...meta,
+            type: ext.t,
+            // Seule la VF est signalee dans le titre.
+            name: withLangBadge(meta.name, tag === 'DUB' || tag === 'DUB_SUB' ? 'DUB' : 'NONE'),
+            // Affiche badgee de Frank (VF / VOSTFR colle dans l'image).
+            poster: imdbId && config.posterBaseUrl
+                ? `${config.posterBaseUrl}/poster/${ext.t}/${imdbId}.jpg`
+                : betterPosterUrl(imdbId) || meta.poster,
+            posterShape: 'poster'
+        });
+    });
+
+    // Tant que des titres restent a verifier, on garde le resultat peu de temps.
+    const complete = detections.every(Boolean);
+    const result = { items, complete, expires: Date.now() + (complete ? CACHE_TTL : 60 * 1000) };
+    externalCache.set(cacheKey, result);
+    return result;
 }
 
 // ============================================================================
@@ -494,9 +614,13 @@ async function searchFrenchStream(query, type) {
         return fallbackHtml ? scrapeItems(fallbackHtml, type) : [];
     }));
 
+    return finishSearchResults(searches.flat(), query);
+}
+
+function finishSearchResults(items, query) {
     const seen = new Set();
     const results = [];
-    searches.flat().forEach(item => {
+    items.forEach(item => {
         const cleanTitle = item.type === 'series' ? cleanSeriesTitle(item.title) : cleanSearchTitle(item.title);
         const key = `${item.type}:${cleanTitle.toLowerCase()}`;
         if (!cleanTitle || seen.has(key) || !isRelevantSearchResult(cleanTitle, query)) return;
@@ -505,6 +629,26 @@ async function searchFrenchStream(query, type) {
     });
 
     return results;
+}
+
+// Recherche pour le detecteur de langue : une seule requete, et une erreur si
+// French Stream ne repond pas normalement, pour ne pas prendre un blocage
+// pour un "pas de VF".
+async function searchFrenchStreamStrict(query, type) {
+    const response = await fetch('https://maj.french-stream.pink/engine/ajax/search.php', {
+        method: 'POST',
+        headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://maj.french-stream.pink/',
+            'Origin': 'https://maj.french-stream.pink',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `query=${encodeURIComponent(query)}&page=1`
+    });
+    if (!response.ok) throw new Error(`French Stream HTTP ${response.status}`);
+    const html = await response.text();
+    if (/just a moment|cf-chl|captcha|too many requests/i.test(html)) throw new Error('French Stream bloque les recherches');
+    return finishSearchResults(scrapeSearchItems(html, type), query);
 }
 
 async function enrichSearchResults(items, config) {
@@ -520,6 +664,7 @@ async function enrichSearchResults(items, config) {
 
             if (tmdb) {
                 id = tmdb.imdbId || `tmdb:${tmdb.tmdbId}`;
+                rememberLanguage(tmdb.imdbId, item.languageTag);
                 poster = betterPosterUrl(tmdb.imdbId, item.languageTag, config.posterBaseUrl) || tmdb.poster || poster;
                 metaCache.set(`${item.type}:${id}`, {
                     id, type: item.type, name: withLangBadge(tmdb.title || item.searchTitle || item.title, item.languageTag), poster, background: tmdb.backdrop,
@@ -560,6 +705,11 @@ function createManifest(config) {
         idPrefixes: ['tt', 'tmdb:', 'fs:'],
         catalogs: [
             ...selected,
+            ...config.externals.map((ext, index) => ({
+                type: ext.t,
+                id: `fs-ext-${index}`,
+                name: `${config.vfOnly ? 'VF' : 'FR'} · ${ext.n}`
+            })),
             { type: 'movie', id: 'fs-search', name: 'Recherche French Stream - Films', extra: [{ name: 'search', isRequired: true }] },
             { type: 'series', id: 'fs-search', name: 'Recherche French Stream - Séries', extra: [{ name: 'search', isRequired: true }] }
         ],
@@ -570,12 +720,20 @@ function createManifest(config) {
 const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_URL || '') => {
     const config = parseConfig(configStr);
     config.posterBaseUrl = posterBaseUrl;
+    useTmdbKey(config.tmdbKey);
     const builder = new addonBuilder(createManifest(config));
 
     builder.defineCatalogHandler(async ({ type, id, extra }) => {
         if (id === 'fs-search' && extra.search) {
             const results = await searchFrenchStream(extra.search, type);
             return { metas: await enrichSearchResults(results, config) };
+        }
+        const external = id.match(/^fs-ext-(\d+)$/);
+        if (external) {
+            const ext = config.externals[Number(external[1])];
+            if (!ext) return { metas: [] };
+            const { items, complete } = await getExternalCatalogItems(ext, config);
+            return { metas: items, cacheMaxAge: complete ? 3600 : 60 };
         }
         const catalogId = id.replace('fs-', '');
         const items = await getCatalogItems(catalogId, config);
@@ -591,4 +749,4 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     return builder.getInterface();
 };
 
-module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag };
+module.exports = { prepareExternalCatalogs, getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, searchFrenchStreamStrict, normalizeSearchValue };
