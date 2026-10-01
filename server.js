@@ -1,6 +1,6 @@
 const { getRouter } = require('stremio-addon-sdk');
 const { getAddonInterface, testTMDBKey, prepareExternalCatalogs } = require('./addon');
-const { detectWithin, explain: explainDetection, lookupPosterInfo } = require('./language-detector');
+const { detectWithin, explain: explainDetection, lookupPosterInfo, loadPersisted } = require('./language-detector');
 const { addLanguageBadges } = require('./poster-badge');
 
 const fetch = require('node-fetch');
@@ -591,6 +591,8 @@ const server = http.createServer(
 // ============================================================
 // START
 // ============================================================
+
+loadPersisted().catch(error => console.error('Neon:', error.message));
 
 server.listen(
     PORT,

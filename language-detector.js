@@ -9,8 +9,12 @@
 
 const fetch = require('node-fetch');
 
-const FOUND_TTL = 3 * 24 * 60 * 60 * 1000; // VF / VOSTFR trouve : 3 jours
-const NONE_TTL = 24 * 60 * 60 * 1000;      // rien trouve : on reverifie apres 1 jour
+const persistence = require('./language-store');
+
+// Une fois trouvee, une VF reste dispo : on la garde 30 jours.
+// Sans VF, on reverifie apres 3 jours (elle peut arriver plus tard).
+const FOUND_TTL = 30 * 24 * 60 * 60 * 1000;
+const NONE_TTL = 3 * 24 * 60 * 60 * 1000;
 const MAX_CONCURRENT = 1;
 const REQUEST_GAP_MS = 1000; // pause entre deux requetes vers French Stream
 const MAX_QUEUE = 500;
@@ -38,7 +42,21 @@ function isEnabled() {
 
 function store(key, tag, poster, imdbId) {
     if (results.size >= MAX_ENTRIES) results.delete(results.keys().next().value);
-    results.set(key, { tag, poster, imdbId, expires: Date.now() + (tag === 'NONE' ? NONE_TTL : FOUND_TTL) });
+    const entry = { tag, poster, imdbId, expires: Date.now() + (tag === 'NONE' ? NONE_TTL : FOUND_TTL) };
+    results.set(key, entry);
+    persistence.save(key, entry);
+}
+
+// Au demarrage : recharge les resultats enregistres dans Neon.
+async function loadPersisted() {
+    const rows = await persistence.loadAll();
+    for (const row of rows) {
+        if (!results.has(row.key)) {
+            results.set(row.key, { tag: row.tag, poster: row.poster, imdbId: row.imdbId, expires: row.expires });
+        }
+    }
+    if (rows.length) console.log(`Detecteur de langue : ${rows.length} resultats recharges depuis Neon`);
+    return rows.length;
 }
 
 function getKnown(key) {
@@ -333,8 +351,9 @@ async function explain(id, type) {
     } catch (error) {
         report.error = error.message;
     }
+    report.database = { ...persistence.status, inMemory: results.size };
     report.cached = getKnown(/^tt\d+$/i.test(id) ? id : `${type}:${id}`);
     return report;
 }
 
-module.exports = { detect, explain, lookupPosterInfo, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
+module.exports = { detect, explain, lookupPosterInfo, loadPersisted, detectWithin, remember, mergeTags, isEnabled, useTmdbKey, _results: results };
