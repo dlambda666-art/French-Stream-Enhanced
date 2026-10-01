@@ -614,9 +614,13 @@ async function searchFrenchStream(query, type) {
         return fallbackHtml ? scrapeItems(fallbackHtml, type) : [];
     }));
 
+    return finishSearchResults(searches.flat(), query);
+}
+
+function finishSearchResults(items, query) {
     const seen = new Set();
     const results = [];
-    searches.flat().forEach(item => {
+    items.forEach(item => {
         const cleanTitle = item.type === 'series' ? cleanSeriesTitle(item.title) : cleanSearchTitle(item.title);
         const key = `${item.type}:${cleanTitle.toLowerCase()}`;
         if (!cleanTitle || seen.has(key) || !isRelevantSearchResult(cleanTitle, query)) return;
@@ -625,6 +629,26 @@ async function searchFrenchStream(query, type) {
     });
 
     return results;
+}
+
+// Recherche pour le detecteur de langue : une seule requete, et une erreur si
+// French Stream ne repond pas normalement, pour ne pas prendre un blocage
+// pour un "pas de VF".
+async function searchFrenchStreamStrict(query, type) {
+    const response = await fetch('https://maj.french-stream.pink/engine/ajax/search.php', {
+        method: 'POST',
+        headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://maj.french-stream.pink/',
+            'Origin': 'https://maj.french-stream.pink',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `query=${encodeURIComponent(query)}&page=1`
+    });
+    if (!response.ok) throw new Error(`French Stream HTTP ${response.status}`);
+    const html = await response.text();
+    if (/just a moment|cf-chl|captcha|too many requests/i.test(html)) throw new Error('French Stream bloque les recherches');
+    return finishSearchResults(scrapeSearchItems(html, type), query);
 }
 
 async function enrichSearchResults(items, config) {
@@ -725,4 +749,4 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     return builder.getInterface();
 };
 
-module.exports = { prepareExternalCatalogs, getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, normalizeSearchValue };
+module.exports = { prepareExternalCatalogs, getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, searchFrenchStreamStrict, normalizeSearchValue };

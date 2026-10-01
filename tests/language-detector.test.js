@@ -25,6 +25,7 @@ const fakeTmdb = {
     '/find/tt1457767': { movie_results: [{ title: 'Conjuring : Les Dossiers Warren', original_title: 'The Conjuring', release_date: '2013-07-18' }], tv_results: [] },
     '/find/tt0117571': { movie_results: [{ title: 'Scream', original_title: 'Scream', release_date: '1996-12-20' }], tv_results: [] },
     '/find/tt17526714': { movie_results: [{ title: 'The Substance', original_title: 'The Substance', release_date: '2024-09-07' }], tv_results: [] },
+    '/find/tt0000666': { movie_results: [{ title: 'Site bloque', original_title: 'Site bloque', release_date: '2020-01-01' }], tv_results: [] },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -44,8 +45,9 @@ Module._load = function (request, parent, isMain) {
         return {
             getLanguageTag: ({ languageText }) => (/\bVF\b/i.test(languageText) ? (/VOSTFR/i.test(languageText) ? 'DUB_SUB' : 'DUB') : (/VOSTFR/i.test(languageText) ? 'SUB' : 'NONE')),
             normalizeSearchValue: value => value.normalize('NFD').replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').replace(/[̀-ͯ]/g, '').toLowerCase().trim(),
-            searchFrenchStream: async (title, type) => {
+            searchFrenchStreamStrict: async (title, type) => {
                 searches.push(`${type}:${title}`);
+                if (title === 'Site bloque') throw new Error('French Stream HTTP 429');
                 return fakeSearchResults[title] || [];
             }
         };
@@ -85,6 +87,15 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
 
     // Langue absente de l'adresse -> lue sur la fiche ("Version : VF+VOSTFR")
     assert.equal((await detector.detect('tt17526714', 'movie')).tag, 'DUB_SUB');
+
+    // French Stream ne repond pas : pas de resultat, et rien n'est retenu
+    assert.equal(await detector.detect('tt0000666', 'movie'), null);
+    assert.equal(detector._results.has('tt0000666'), false);
+
+    // Titre identique en francais et en original : une seule recherche
+    const beforeOne = searches.length;
+    await detector.detect('tt17526714', 'movie');
+    assert.equal(searches.length, beforeOne); // deja en memoire
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');

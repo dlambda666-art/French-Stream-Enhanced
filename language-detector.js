@@ -11,7 +11,8 @@ const fetch = require('node-fetch');
 
 const FOUND_TTL = 3 * 24 * 60 * 60 * 1000; // VF / VOSTFR trouve : 3 jours
 const NONE_TTL = 24 * 60 * 60 * 1000;      // rien trouve : on reverifie apres 1 jour
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 1;
+const REQUEST_GAP_MS = 1000; // pause entre deux requetes vers French Stream
 const MAX_QUEUE = 500;
 const MAX_ENTRIES = 20000;
 
@@ -132,6 +133,27 @@ function sameYear(item, info) {
     return Math.abs(Number(found[0].slice(1, 5)) - info.year) <= 1;
 }
 
+let nextRequestAt = 0;
+
+// Espace les requetes vers French Stream pour ne pas se faire bloquer.
+async function pace() {
+    const now = Date.now();
+    const wait = Math.max(0, nextRequestAt - now);
+    nextRequestAt = Math.max(now, nextRequestAt) + REQUEST_GAP_MS;
+    if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+}
+
+// Titres a chercher, sans doublon (titre francais = titre original).
+function uniqueTitles(titles, normalize) {
+    const seen = new Set();
+    return titles.filter(title => {
+        const key = canonicalTitle(title, normalize);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 function pageUrl(href) {
     if (/^https?:/i.test(href)) return href;
     return `https://maj.french-stream.pink${String(href).startsWith('/') ? '' : '/'}${href}`;
@@ -141,23 +163,22 @@ function pageUrl(href) {
 // "Version :" de la fiche (<span id="film_lang">VF+VOSTFR</span>).
 async function fetchPageLanguage(href) {
     const { getLanguageTag } = require('./addon');
-    try {
-        const response = await fetch(pageUrl(href), { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const html = await response.text();
-        const field = html.match(/id=["']film_lang["'][^>]*>([\s\S]*?)<\/span>/i);
-        if (!field) return 'NONE';
-        const text = field[1].replace(/<[^>]+>/g, ' ');
-        return getLanguageTag({ title: '', languageText: text });
-    } catch (error) {
-        console.error('Fiche French Stream:', href, error.message);
-        return 'NONE';
-    }
+    await pace();
+    const response = await fetch(pageUrl(href), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    // Erreur = on ne retient rien, on reessaiera plus tard.
+    if (!response.ok) throw new Error(`Fiche French Stream HTTP ${response.status}`);
+    const html = await response.text();
+    const field = html.match(/id=["']film_lang["'][^>]*>([\s\S]*?)<\/span>/i);
+    if (!field) return 'NONE';
+    const text = field[1].replace(/<[^>]+>/g, ' ');
+    return getLanguageTag({ title: '', languageText: text });
 }
 
 async function detectOnFrenchStream(info) {
-    const { searchFrenchStream, normalizeSearchValue } = require('./addon');
-    for (const title of info.titles) {
-        const items = await searchFrenchStream(title, info.type);
+    const { searchFrenchStreamStrict, normalizeSearchValue } = require('./addon');
+    for (const title of uniqueTitles(info.titles, normalizeSearchValue)) {
+        await pace();
+        const items = await searchFrenchStreamStrict(title, info.type);
         const matches = items.filter(item => sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, info));
         if (!matches.length) continue;
         const tag = mergeTags(matches.map(item => item.languageTag));
@@ -255,9 +276,9 @@ async function explain(id, type) {
         const info = await lookupTitle(id, type);
         report.tmdb = info;
         if (!info) return report;
-        const { searchFrenchStream, normalizeSearchValue } = require('./addon');
-        for (const title of info.titles) {
-            const items = await searchFrenchStream(title, info.type);
+        const { searchFrenchStreamStrict, normalizeSearchValue } = require('./addon');
+        for (const title of uniqueTitles(info.titles, normalizeSearchValue)) {
+            const items = await searchFrenchStreamStrict(title, info.type);
             const matched = items.find(item => sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, info));
             if (matched && !report.page) report.page = await describePage(matched);
             report.steps.push({
