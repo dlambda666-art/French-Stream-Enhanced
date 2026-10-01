@@ -13,6 +13,7 @@ const fakeSearchResults = {
     'Shogun': [{ searchTitle: 'Shogun', languageTag: 'SUB' }],
     'Conjuring : Les Dossiers Warren': [{ searchTitle: 'Conjuring 1 : Les Dossiers Warren', languageTag: 'DUB', rawText: 'Conjuring 1 : Les Dossiers Warren (2013)' }],
     'Scream': [{ searchTitle: 'Scream 2', languageTag: 'DUB', rawText: 'Scream 2 (1997)' }],
+    'The Substance': [{ searchTitle: 'The Substance', languageTag: 'NONE', rawText: 'The Substance (2024)', href: '/15118576-the-substance.html' }],
     'Halloween': [{ searchTitle: 'Halloween', languageTag: 'DUB', rawText: 'Halloween (2018)' }]
 };
 
@@ -23,6 +24,7 @@ const fakeTmdb = {
     '/find/tt1502407': { movie_results: [{ title: 'Halloween', original_title: 'Halloween', release_date: '2018-10-18' }], tv_results: [] },
     '/find/tt1457767': { movie_results: [{ title: 'Conjuring : Les Dossiers Warren', original_title: 'The Conjuring', release_date: '2013-07-18' }], tv_results: [] },
     '/find/tt0117571': { movie_results: [{ title: 'Scream', original_title: 'Scream', release_date: '1996-12-20' }], tv_results: [] },
+    '/find/tt17526714': { movie_results: [{ title: 'The Substance', original_title: 'The Substance', release_date: '2024-09-07' }], tv_results: [] },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -30,6 +32,9 @@ const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
     if (request === 'node-fetch') {
         return async url => {
+            if (url.includes('french-stream')) {
+                return { ok: true, text: async () => '<li><span>Version:</span><span id="film_lang"><a href="/x">VF+VOSTFR</a></span></li>' };
+            }
             const route = new URL(url).pathname.replace('/3', '');
             const body = fakeTmdb[route] || (route.startsWith('/find/') ? { movie_results: [], tv_results: [] } : null);
             return { ok: Boolean(body), status: body ? 200 : 404, json: async () => body };
@@ -37,6 +42,7 @@ Module._load = function (request, parent, isMain) {
     }
     if (request === './addon') {
         return {
+            getLanguageTag: ({ languageText }) => (/\bVF\b/i.test(languageText) ? (/VOSTFR/i.test(languageText) ? 'DUB_SUB' : 'DUB') : (/VOSTFR/i.test(languageText) ? 'SUB' : 'NONE')),
             normalizeSearchValue: value => value.normalize('NFD').replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').replace(/[̀-ͯ]/g, '').toLowerCase().trim(),
             searchFrenchStream: async (title, type) => {
                 searches.push(`${type}:${title}`);
@@ -76,6 +82,9 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     // "1" ajoute par French Stream -> trouve ; une suite ("Scream 2") -> non
     assert.equal((await detector.detect('tt1457767', 'movie')).tag, 'DUB');
     assert.equal((await detector.detect('tt0117571', 'movie')).tag, 'NONE');
+
+    // Langue absente de l'adresse -> lue sur la fiche ("Version : VF+VOSTFR")
+    assert.equal((await detector.detect('tt17526714', 'movie')).tag, 'DUB_SUB');
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');

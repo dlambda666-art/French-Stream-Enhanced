@@ -132,12 +132,38 @@ function sameYear(item, info) {
     return Math.abs(Number(found[0].slice(1, 5)) - info.year) <= 1;
 }
 
+function pageUrl(href) {
+    if (/^https?:/i.test(href)) return href;
+    return `https://maj.french-stream.pink${String(href).startsWith('/') ? '' : '/'}${href}`;
+}
+
+// Quand l'adresse de la page ne donne pas la langue, on lit le champ
+// "Version :" de la fiche (<span id="film_lang">VF+VOSTFR</span>).
+async function fetchPageLanguage(href) {
+    const { getLanguageTag } = require('./addon');
+    try {
+        const response = await fetch(pageUrl(href), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await response.text();
+        const field = html.match(/id=["']film_lang["'][^>]*>([\s\S]*?)<\/span>/i);
+        if (!field) return 'NONE';
+        const text = field[1].replace(/<[^>]+>/g, ' ');
+        return getLanguageTag({ title: '', languageText: text });
+    } catch (error) {
+        console.error('Fiche French Stream:', href, error.message);
+        return 'NONE';
+    }
+}
+
 async function detectOnFrenchStream(info) {
     const { searchFrenchStream, normalizeSearchValue } = require('./addon');
     for (const title of info.titles) {
         const items = await searchFrenchStream(title, info.type);
         const matches = items.filter(item => sameTitle(item.searchTitle, title, normalizeSearchValue) && sameYear(item, info));
-        if (matches.length) return mergeTags(matches.map(item => item.languageTag));
+        if (!matches.length) continue;
+        const tag = mergeTags(matches.map(item => item.languageTag));
+        if (tag !== 'NONE') return tag;
+        const withPage = matches.find(item => item.href);
+        return withPage ? fetchPageLanguage(withPage.href) : 'NONE';
     }
     return 'NONE';
 }
@@ -210,7 +236,7 @@ function contexts(text, max) {
 }
 
 async function describePage(item) {
-    const href = /^https?:/i.test(item.href) ? item.href : `https://maj.french-stream.pink${item.href.startsWith('/') ? '' : '/'}${item.href}`;
+    const href = pageUrl(item.href);
     try {
         const response = await fetch(href, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const html = await response.text();
