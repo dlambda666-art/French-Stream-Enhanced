@@ -223,24 +223,43 @@ function pump() {
 }
 
 // Renvoie { tag, poster, imdbId } (tag : DUB / SUB / DUB_SUB / NONE), ou null si inconnu.
-function detect(id, type) {
+// priority : affiche reellement affichee a l'ecran -> passe en tete de file,
+// avant les titres des catalogues verifies en arriere-plan.
+function detect(id, type, { priority = false } = {}) {
     if (!isEnabled()) return Promise.resolve(null);
     const key = /^tt\d+$/i.test(id) ? id : `${type}:${id}`;
     const known = getKnown(key);
     if (known) return Promise.resolve(known);
-    if (inFlight.has(key)) return inFlight.get(key);
-    if (queue.length >= MAX_QUEUE) return Promise.resolve(null);
 
-    const promise = new Promise(resolve => queue.push({ key, id, type, resolve }));
+    if (inFlight.has(key)) {
+        if (priority) {
+            const index = queue.findIndex(job => job.key === key);
+            if (index > 0) queue.unshift(...queue.splice(index, 1));
+        }
+        return inFlight.get(key);
+    }
+
+    if (queue.length >= MAX_QUEUE) {
+        if (!priority) return Promise.resolve(null);
+        const dropped = queue.pop(); // on lache le dernier titre d'arriere-plan
+        inFlight.delete(dropped.key);
+        dropped.resolve(null);
+    }
+
+    const promise = new Promise(resolve => {
+        const job = { key, id, type, resolve };
+        if (priority) queue.unshift(job);
+        else queue.push(job);
+    });
     inFlight.set(key, promise);
     pump();
     return promise;
 }
 
 // Attend au plus `ms` millisecondes ; la detection continue en arriere-plan.
-function detectWithin(id, type, ms) {
+function detectWithin(id, type, ms, options) {
     return Promise.race([
-        detect(id, type),
+        detect(id, type, options),
         new Promise(resolve => setTimeout(() => resolve(null), ms))
     ]);
 }

@@ -97,6 +97,13 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     await detector.detect('tt17526714', 'movie');
     assert.equal(searches.length, beforeOne); // deja en memoire
 
+    // Priorite : une affiche affichee passe devant les titres d'arriere-plan
+    const order = [];
+    const background = ['tt0000101', 'tt0000102', 'tt0000103'].map(id => detector.detect(id, 'movie').then(() => order.push(id)));
+    const shown = detector.detect('tt0000104', 'movie', { priority: true }).then(() => order.push('tt0000104'));
+    await Promise.all([...background, shown]);
+    assert.ok(order.indexOf('tt0000104') <= 1, `ordre: ${order}`);
+
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');
 

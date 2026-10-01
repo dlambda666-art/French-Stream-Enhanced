@@ -287,7 +287,7 @@ function redirect(res, url, cacheControl) {
 }
 
 async function serveLanguagePoster(res, type, id) {
-    const result = await detectWithin(id, type, DETECT_WAIT_MS);
+    const result = await detectWithin(id, type, DETECT_WAIT_MS, { priority: true });
     const imdbId = /^tt\d+$/i.test(id) ? id : result?.imdbId;
     const candidates = [
         imdbId ? `${BETTERPOSTER_BASE}${encodeURIComponent(imdbId)}.jpg` : null,
