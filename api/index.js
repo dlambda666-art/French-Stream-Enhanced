@@ -1,5 +1,5 @@
 const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface, testTMDBKey } = require('../addon');
+const { getAddonInterface, testTMDBKey, prepareExternalCatalogs } = require('../addon');
 const path = require('path');
 const fs = require('fs');
 const fetch = require('node-fetch');
@@ -398,6 +398,8 @@ module.exports = async (req, res) => {
     const publicBaseUrl =
         process.env.PUBLIC_BASE_URL ||
         `https://${req.headers.host}`;
+
+    await prepareExternalCatalogs(configStr);
 
     const addonInterface =
         getAddonInterface(

@@ -1,5 +1,5 @@
 const { getRouter } = require('stremio-addon-sdk');
-const { getAddonInterface, testTMDBKey } = require('./addon');
+const { getAddonInterface, testTMDBKey, prepareExternalCatalogs } = require('./addon');
 const { detectWithin, explain: explainDetection } = require('./language-detector');
 const { addLanguageBadges } = require('./poster-badge');
 
@@ -534,6 +534,8 @@ const server = http.createServer(
         // ====================================================
 
         try {
+            await prepareExternalCatalogs(configStr);
+
             const addonInterface =
                 getAddonInterface(
                     configStr,

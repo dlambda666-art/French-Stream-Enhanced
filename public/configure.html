@@ -395,32 +395,26 @@
 
         let externalCatalogs = [];
 
-        // Lit les manifests collés et garde leurs catalogues films / séries
-        // utilisables sans filtre obligatoire (genre, recherche...).
+        // Vérifie les manifests collés. Seules leurs adresses vont dans la config :
+        // Frank lit lui-même leurs catalogues (sinon l'URL devient trop longue).
         async function loadExternalCatalogs() {
             const urls = document.getElementById('externals').value
                 .split('\n')
-                .map(line => line.trim())
+                .map(line => line.trim().replace(/^stremio:\/\//i, 'https://'))
                 .filter(Boolean);
 
-            const catalogs = [];
             for (const url of urls) {
-                const manifestUrl = url.replace(/^stremio:\/\//i, 'https://');
                 try {
-                    const response = await fetch(manifestUrl);
+                    if (!/\/manifest\.json/i.test(url)) throw new Error('not a manifest');
+                    const response = await fetch(url);
                     const manifest = await response.json();
-                    const base = manifestUrl.replace(/\/manifest\.json.*$/i, '');
-                    (manifest.catalogs || []).forEach(catalog => {
-                        const required = (catalog.extra || []).some(extra => extra.isRequired);
-                        if (required || !['movie', 'series'].includes(catalog.type)) return;
-                        catalogs.push({ u: base, t: catalog.type, i: catalog.id, n: catalog.name || catalog.id });
-                    });
+                    if (!Array.isArray(manifest.catalogs)) throw new Error('no catalogs');
                 } catch (error) {
                     showMessage(`Impossible de lire ce manifest : ${url}`, true);
                     return false;
                 }
             }
-            externalCatalogs = catalogs.slice(0, 20);
+            externalCatalogs = urls.slice(0, 5);
             return true;
         }
 

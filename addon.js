@@ -142,7 +142,7 @@ const DEFAULT_CATALOGS = ['derniers-films', 'films-action', 'dernieres-series', 
 // ============================================================================
 
 function parseConfig(configStr) {
-    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externals: [] };
+    if (!configStr) return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externalManifests: [], externals: [] };
     try {
         const decoded = Buffer.from(configStr, 'base64').toString();
         const config = JSON.parse(decoded);
@@ -151,21 +151,58 @@ function parseConfig(configStr) {
             rpdbKey: config.r ? 't0-free-rpdb' : null,
             catalogs: Array.isArray(config.c) ? config.c.filter(id => ALL_CATALOGS[id]) : DEFAULT_CATALOGS,
             vfOnly: config.v || false,
-            externals: parseExternals(config.x)
+            externalManifests: parseManifestUrls(config.x),
+            externals: externalsFromCache(parseManifestUrls(config.x))
         };
     } catch (e) {
-        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externals: [] };
+        return { tmdbKey: null, rpdbKey: null, catalogs: DEFAULT_CATALOGS, vfOnly: false, externalManifests: [], externals: [] };
     }
 }
 
 // Catalogues d'autres addons (ex. Scary Only) passes au detecteur de langue.
-// Format dans la config : { u: base de l'addon, t: type, i: id du catalogue, n: nom }
-function parseExternals(list) {
+// La config ne garde que les adresses de leurs manifests (une adresse par
+// catalogue rendait l'URL trop longue : erreur HTTP 431). Frank lit lui-meme
+// les manifests et garde leurs catalogues en memoire.
+const MANIFEST_TTL = 6 * 60 * 60 * 1000;
+const externalManifests = new Map(); // url -> { catalogs, expires }
+
+function parseManifestUrls(list) {
     if (!Array.isArray(list)) return [];
     return list
-        .filter(ext => ext && /^https?:\/\//i.test(ext.u) && ['movie', 'series'].includes(ext.t) && ext.i)
-        .slice(0, 20)
-        .map(ext => ({ u: String(ext.u).replace(/\/+$/, ''), t: ext.t, i: String(ext.i), n: String(ext.n || ext.i) }));
+        .filter(url => typeof url === 'string' && /^https?:\/\/.+\/manifest\.json/i.test(url))
+        .slice(0, 5);
+}
+
+function externalsFromCache(manifestUrls) {
+    const catalogs = [];
+    for (const url of manifestUrls) {
+        catalogs.push(...(externalManifests.get(url)?.catalogs || []));
+    }
+    return catalogs.slice(0, 20);
+}
+
+async function loadExternalManifest(url) {
+    const cached = externalManifests.get(url);
+    if (cached && cached.expires > Date.now()) return;
+    try {
+        const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 FrenchStreamEnhanced' } });
+        const manifest = await response.json();
+        const base = url.replace(/\/manifest\.json.*$/i, '');
+        const catalogs = (manifest.catalogs || [])
+            .filter(catalog => ['movie', 'series'].includes(catalog.type) && catalog.id)
+            .filter(catalog => !(catalog.extra || []).some(extra => extra.isRequired))
+            .map(catalog => ({ u: base, t: catalog.type, i: String(catalog.id), n: String(catalog.name || catalog.id) }));
+        externalManifests.set(url, { catalogs, expires: Date.now() + MANIFEST_TTL });
+    } catch (e) {
+        console.error('Manifest externe:', url, e.message);
+        if (!cached) externalManifests.set(url, { catalogs: [], expires: Date.now() + 60 * 1000 });
+    }
+}
+
+// A appeler avant getAddonInterface : charge les manifests de la config.
+async function prepareExternalCatalogs(configStr) {
+    const urls = parseConfig(configStr).externalManifests;
+    await Promise.all(urls.map(loadExternalManifest));
 }
 
 function cleanSeriesTitle(title) {
@@ -687,4 +724,4 @@ const getAddonInterface = (configStr, posterBaseUrl = process.env.PUBLIC_BASE_UR
     return builder.getInterface();
 };
 
-module.exports = { getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, normalizeSearchValue };
+module.exports = { prepareExternalCatalogs, getAddonInterface, ALL_CATALOGS, testTMDBKey, betterPosterUrl, getLanguageTag, searchFrenchStream, normalizeSearchValue };

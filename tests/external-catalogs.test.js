@@ -21,6 +21,12 @@ Module._load = function (request) {
     if (request === 'node-fetch') {
         return async url => {
             fetched.push(url);
+            if (url.endsWith('/manifest.json')) {
+                return { ok: true, json: async () => ({ catalogs: [
+                    { type: 'movie', id: 'scary-movies', name: 'Scary Only' },
+                    { type: 'movie', id: 'scary-search', name: 'Recherche', extra: [{ name: 'search', isRequired: true }] }
+                ] }) };
+            }
             return { ok: true, json: async () => externalCatalog };
         };
     }
@@ -45,14 +51,17 @@ Module._load = function (request) {
     return originalLoad.apply(this, arguments);
 };
 
-const { getAddonInterface } = require(path.join(__dirname, '..', 'addon.js'));
+const { getAddonInterface, prepareExternalCatalogs } = require(path.join(__dirname, '..', 'addon.js'));
 
 function configString(config) {
     return Buffer.from(JSON.stringify(config)).toString('base64');
 }
 
 (async () => {
-    const externals = [{ u: 'https://scary.example/abc/', t: 'movie', i: 'scary-movies', n: 'Scary Only' }];
+    const externals = ['https://scary.example/abc/manifest.json'];
+    await prepareExternalCatalogs(configString({ t: 'k', c: [], x: externals }));
+    // Le catalogue a filtre obligatoire (recherche) n'est pas repris
+    assert.equal(getAddonInterface(configString({ t: 'k', c: [], x: externals })).manifest.catalogs.filter(c => c.id.startsWith('fs-ext-')).length, 1);
 
     // VF uniquement : seuls les titres dispo en VF restent
     const vfOnly = getAddonInterface(configString({ t: 'k', c: [], v: true, x: externals }), 'https://frank.example');
@@ -60,7 +69,7 @@ function configString(config) {
     assert.deepEqual(catalogEntry, { type: 'movie', id: 'fs-ext-0', name: 'VF · Scary Only' });
 
     const result = await handlers.catalog({ type: 'movie', id: 'fs-ext-0', extra: {} });
-    assert.equal(fetched[0], 'https://scary.example/abc/catalog/movie/scary-movies.json');
+    assert.equal(fetched[1], 'https://scary.example/abc/catalog/movie/scary-movies.json');
     assert.deepEqual(result.metas.map(m => m.name), ['[VF] Film doublé', '[VF+VOSTFR] Film id TMDB']);
     assert.equal(result.metas[0].poster, 'https://frank.example/poster/movie/tt0000001.jpg');
     assert.equal(result.metas[1].poster, 'https://frank.example/poster/movie/44.jpg');
@@ -79,7 +88,7 @@ function configString(config) {
     ]);
 
     // Config invalide ou index hors limites : pas de plantage
-    getAddonInterface(configString({ t: 'k', c: [], x: [{ u: 'pas-une-url', t: 'movie', i: 'x' }] }));
+    getAddonInterface(configString({ t: 'k', c: [], x: ['pas-une-url'] }));
     assert.deepEqual(await handlers.catalog({ type: 'movie', id: 'fs-ext-0', extra: {} }), { metas: [] });
 
     console.log('external-catalogs: OK');
