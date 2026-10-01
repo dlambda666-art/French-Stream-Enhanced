@@ -55,15 +55,15 @@ function configString(config) {
     const externals = [{ u: 'https://scary.example/abc/', t: 'movie', i: 'scary-movies', n: 'Scary Only' }];
 
     // VF uniquement : seuls les titres dispo en VF restent
-    const vfOnly = getAddonInterface(configString({ t: 'k', c: [], v: true, x: externals }));
+    const vfOnly = getAddonInterface(configString({ t: 'k', c: [], v: true, x: externals }), 'https://frank.example');
     const catalogEntry = vfOnly.manifest.catalogs.find(c => c.id === 'fs-ext-0');
     assert.deepEqual(catalogEntry, { type: 'movie', id: 'fs-ext-0', name: 'VF · Scary Only' });
 
     const result = await handlers.catalog({ type: 'movie', id: 'fs-ext-0', extra: {} });
     assert.equal(fetched[0], 'https://scary.example/abc/catalog/movie/scary-movies.json');
     assert.deepEqual(result.metas.map(m => m.name), ['[VF] Film doublé', '[VF+VOSTFR] Film id TMDB']);
-    assert.equal(result.metas[0].poster, 'https://btttr.cc/poster/imdb/poster-default/tt0000001.jpg');
-    assert.equal(result.metas[1].poster, 'https://x/4.jpg');
+    assert.equal(result.metas[0].poster, 'https://frank.example/poster/movie/tt0000001.jpg');
+    assert.equal(result.metas[1].poster, 'https://frank.example/poster/movie/44.jpg');
     // Un titre encore inconnu -> resultat garde peu de temps
     assert.equal(result.cacheMaxAge, 60);
 

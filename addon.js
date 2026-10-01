@@ -523,7 +523,10 @@ async function getExternalCatalogItems(ext, config) {
             ...meta,
             type: ext.t,
             name: withLangBadge(meta.name, tag || 'NONE'),
-            poster: betterPosterUrl(imdbId) || meta.poster,
+            // Affiche badgee de Frank (VF / VOSTFR colle dans l'image).
+            poster: imdbId && config.posterBaseUrl
+                ? `${config.posterBaseUrl}/poster/${ext.t}/${imdbId}.jpg`
+                : betterPosterUrl(imdbId) || meta.poster,
             posterShape: 'poster'
         });
     });
