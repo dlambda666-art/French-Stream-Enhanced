@@ -79,6 +79,9 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     // Id TMDB d'une serie -> retrouve l'IMDb
     const shogun = await detector.detect('42', 'series');
     assert.equal(shogun.tag, 'SUB');
+    // VOSTFR seul : reverifie apres 3 jours (la VF peut arriver), pas 30
+    assert.ok(shogun.expires - Date.now() < 4 * 24 * 60 * 60 * 1000);
+    assert.ok(monteCristo.expires - Date.now() > 29 * 24 * 60 * 60 * 1000);
     assert.equal(shogun.imdbId, 'tt0000042');
 
     // Remake : meme titre, annee differente -> pas confondu
