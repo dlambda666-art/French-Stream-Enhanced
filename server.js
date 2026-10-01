@@ -299,16 +299,29 @@ async function serveLanguagePoster(res, type, id) {
         return res.end('Poster not found');
     }
 
-    // Langue inconnue pour l'instant (detection en cours) ou pas de VF/VOSTFR :
-    // affiche normale. "no-store" tant qu'on ne sait pas, pour que le badge
-    // puisse apparaitre au prochain affichage.
+    // Pas de VF : affiche normale.
     const hasVf = result && (result.tag === 'DUB' || result.tag === 'DUB_SUB');
-    if (!hasVf) {
-        return redirect(
-            res,
-            candidates[0],
-            result ? 'public, max-age=86400' : 'no-store'
-        );
+    if (result && !hasVf) {
+        return redirect(res, candidates[0], 'public, max-age=86400');
+    }
+
+    // Verification pas encore finie : on renvoie l'affiche nous-memes avec
+    // "no-store". Une redirection laissait Nuvio garder l'image sans badge,
+    // meme apres la detection.
+    if (!result) {
+        for (const url of candidates) {
+            try {
+                const body = await fetchImage(url);
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Cache-Control', 'no-store');
+                return res.end(body);
+            } catch (error) {
+                console.error('Poster fetch error:', url, error.message);
+            }
+        }
+        return redirect(res, candidates[0], 'no-store');
     }
 
     const cacheKey = `${imdbId || id}:${result.tag}`;
