@@ -1,0 +1,37 @@
+name: Sync detecteur-vf to Hugging Face lab Space
+
+# Déploie la branche de test sur la copie Frankenstream-lab uniquement,
+# jamais sur le vrai Space Frankenstream.
+on:
+  push:
+    branches: [detecteur-vf]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Hugging Face CLI
+        run: pip install -U huggingface_hub
+
+      - name: Sync repository to Hugging Face lab Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf upload \
+            Lambda666/Frankenstream-lab \
+            . \
+            --repo-type space \
+            --exclude=".git*" \
+            --exclude=".github*" \
+            --delete="*" \
+            --commit-message="Sync detecteur-vf from GitHub"
