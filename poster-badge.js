@@ -20,7 +20,7 @@ const BADGES = {
     DUB_SUB: ['VF', 'VOSTFR']
 };
 
-// Renvoie un JPG : l'affiche avec ses badges en haut a gauche.
+// Renvoie un JPG : l'affiche avec ses badges a gauche, sous le bandeau du haut.
 async function addLanguageBadges(posterBuffer, tag) {
     const labels = BADGES[tag];
     if (!labels) return posterBuffer;
@@ -29,6 +29,8 @@ async function addLanguageBadges(posterBuffer, tag) {
     const { width, height } = await image.metadata();
     const badgeHeight = Math.max(18, Math.round(height * 0.065));
     const margin = Math.round(width * 0.035);
+    // Juste sous le bandeau du haut des affiches BetterPoster.
+    const top = Math.round(height * 0.105);
 
     const overlays = [];
     let left = margin;
@@ -37,7 +39,7 @@ async function addLanguageBadges(posterBuffer, tag) {
             .resize({ height: badgeHeight })
             .png()
             .toBuffer({ resolveWithObject: true });
-        overlays.push({ input: data, left, top: margin });
+        overlays.push({ input: data, left, top });
         left += info.width + Math.round(margin / 2);
     }
 
