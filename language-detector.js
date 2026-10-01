@@ -12,7 +12,8 @@ const fetch = require('node-fetch');
 const persistence = require('./language-store');
 
 // Une fois trouvee, une VF reste dispo : on la garde 30 jours.
-// Sans VF, on reverifie apres 3 jours (elle peut arriver plus tard).
+// Sans VF (rien, ou VOSTFR seul), on reverifie apres 3 jours : la VF peut
+// arriver plus tard.
 const FOUND_TTL = 30 * 24 * 60 * 60 * 1000;
 const NONE_TTL = 3 * 24 * 60 * 60 * 1000;
 const MAX_CONCURRENT = 1;
@@ -42,7 +43,8 @@ function isEnabled() {
 
 function store(key, tag, poster, imdbId) {
     if (results.size >= MAX_ENTRIES) results.delete(results.keys().next().value);
-    const entry = { tag, poster, imdbId, expires: Date.now() + (tag === 'NONE' ? NONE_TTL : FOUND_TTL) };
+    const hasVf = tag === 'DUB' || tag === 'DUB_SUB';
+    const entry = { tag, poster, imdbId, expires: Date.now() + (hasVf ? FOUND_TTL : NONE_TTL) };
     results.set(key, entry);
     persistence.save(key, entry);
 }
