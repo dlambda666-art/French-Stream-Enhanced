@@ -266,9 +266,9 @@ async function serveEnhancedPoster(
 // /poster/{type}/{imdb_id ou tmdb_id}.jpg  -> pour "Custom poster" d'aiometa
 // ============================================================
 
-const DETECT_WAIT_MS = 4000;
+const DETECT_WAIT_MS = 2000;
 const BADGED_CACHE = new Map();
-const BADGED_CACHE_MAX = 300;
+const BADGED_CACHE_MAX = 1500;
 
 async function fetchImage(url) {
     const response = await fetch(url, {
@@ -308,9 +308,9 @@ async function serveLanguagePoster(res, type, id) {
         return redirect(res, candidates[0], 'public, max-age=86400');
     }
 
-    // Verification pas encore finie : on renvoie l'affiche nous-memes avec
-    // "no-store". Une redirection laissait Nuvio garder l'image sans badge,
-    // meme apres la detection.
+    // Verification pas encore finie : on renvoie l'affiche nous-memes, gardee
+    // 10 minutes seulement. Une redirection laissait Nuvio garder l'image sans
+    // badge pour longtemps ; "no-store" la faisait retelecharger sans arret.
     if (!result) {
         for (const url of candidates) {
             try {
@@ -318,7 +318,7 @@ async function serveLanguagePoster(res, type, id) {
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'image/jpeg');
                 res.setHeader('Access-Control-Allow-Origin', '*');
-                res.setHeader('Cache-Control', 'no-store');
+                res.setHeader('Cache-Control', 'public, max-age=600');
                 return res.end(body);
             } catch (error) {
                 console.error('Poster fetch error:', url, error.message);
