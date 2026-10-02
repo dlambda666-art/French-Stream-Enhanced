@@ -32,6 +32,8 @@ const fakeTmdb = {
     '/movie/901/watch/providers': { results: { FR: { rent: [{ provider_name: 'Apple TV' }] } } },
     '/search/tv': { results: [{ id: 777, name: 'Monstre', original_name: 'Monster', first_air_date: '2022-09-21' }] },
     '/tv/777/watch/providers': { results: { BE: { flatrate: [{ provider_name: 'Netflix' }] } } },
+    '/find/tt0000902': { movie_results: [{ id: 902, title: 'Film Shadowz', original_title: 'Shadowz Movie', release_date: '2024-01-01' }], tv_results: [] },
+    '/movie/902/watch/providers': { results: { FR: { flatrate: [{ provider_name: 'Shadowz' }, { provider_name: 'Insomnia Amazon Channel' }, { provider_name: 'Molotov TV' }] } } },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -130,6 +132,9 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     const monster = await detector.detect('tt0000777', 'series');
     assert.equal(monster.tag, 'DUB'); // Netflix en Belgique
     assert.equal(monster.imdbId, 'tt0000777');
+
+    // Plateforme de niche (VOSTFR possible) -> pas de VF automatique
+    assert.equal((await detector.detect('tt0000902', 'movie')).tag, 'NONE');
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');

@@ -10,6 +10,7 @@
 const fetch = require('node-fetch');
 
 const persistence = require('./language-store');
+const streamLanguage = require('./stream-language');
 
 // Une fois trouvee, une VF reste dispo : on la garde 30 jours.
 // Sans VF (rien, ou VOSTFR seul), on reverifie apres 3 jours : la VF peut
@@ -121,13 +122,23 @@ function toTitleInfo(item, mediaType) {
 // La location et l'achat ne comptent pas (VO seule possible).
 const PROVIDER_REGIONS = ['FR', 'BE'];
 const PROVIDER_KINDS = ['flatrate', 'free', 'ads'];
+// Seulement les grandes plateformes qui doublent. Les plateformes de niche
+// (Shadowz, MUBI, Crunchyroll...) diffusent souvent en VOSTFR seul.
+// Les "chaines Amazon" (Insomnia, Shadowz, OCS...) sont des options de niche,
+// souvent en VOSTFR : elles ne comptent pas, seul Prime Video lui-meme compte.
+const DUBBING_PROVIDERS = /netflix|prime video|disney|canal|apple tv|^max\b|hbo|paramount|tf1|^m6|france ?tv|france\.tv|arte|auvio|rtbf|vtm|streamz|salto/i;
+const NICHE_CHANNEL = /channel|chaine|chaîne/i;
 
 async function onFrenchPlatform(info) {
     if (!info.tmdbId) return false;
     try {
         const data = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`);
         return PROVIDER_REGIONS.some(region =>
-            PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || []).length > 0));
+            PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || [])
+                .some(provider => {
+                    const name = provider.provider_name || '';
+                    return DUBBING_PROVIDERS.test(name) && !NICHE_CHANNEL.test(name);
+                })));
     } catch (error) {
         return false; // pas grave : on passe par French Stream
     }
@@ -299,6 +310,16 @@ async function runDetection(key, id, type) {
     const tag = (await onFrenchPlatform(info)) ? 'DUB' : await detectOnFrenchStream(info);
     store(key, tag, info.poster, info.imdbId);
     if (info.imdbId && info.imdbId !== key) store(info.imdbId, tag, info.poster, info.imdbId);
+
+    // Pas de VF trouvee : dernier recours, les streams de l'utilisateur, en
+    // arriere-plan. Ne fait qu'ajouter une VF.
+    if (tag !== 'DUB' && tag !== 'DUB_SUB' && info.imdbId) {
+        streamLanguage.enqueue(info.imdbId, info.type, () => {
+            const upgraded = tag === 'SUB' ? 'DUB_SUB' : 'DUB';
+            store(key, upgraded, info.poster, info.imdbId);
+            if (info.imdbId !== key) store(info.imdbId, upgraded, info.poster, info.imdbId);
+        });
+    }
     return getKnown(key);
 }
 
@@ -392,11 +413,18 @@ async function describePage(item) {
 // Diagnostic (lab) : refait la detection pas a pas, sans cache.
 async function explain(id, type) {
     const report = { id, type, tmdbKey: Boolean(tmdbKey()), steps: [] };
+    let info0 = null;
     try {
         const info = await lookupTitle(id, type);
+        info0 = info;
         report.tmdb = info;
         if (!info) return report;
         report.frenchPlatform = await onFrenchPlatform(info);
+        if (info.tmdbId) {
+            const providers = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`).catch(() => ({}));
+            report.platforms = PROVIDER_REGIONS.flatMap(region => PROVIDER_KINDS.flatMap(kind =>
+                (providers.results?.[region]?.[kind] || []).map(p => `${region}:${p.provider_name}`)));
+        }
         const { searchFrenchStreamStrict, normalizeSearchValue } = require('./addon');
         for (const title of uniqueTitles(info.titles, normalizeSearchValue)) {
             const items = await searchFrenchStreamStrict(title, info.type);
@@ -415,6 +443,8 @@ async function explain(id, type) {
     } catch (error) {
         report.error = error.message;
     }
+    report.streams = info0 && info0.imdbId ? await streamLanguage.explain(info0.imdbId, info0.type) : { enabled: streamLanguage.isEnabled() };
+    report.streamsStatus = streamLanguage.status;
     report.database = { ...persistence.status, inMemory: results.size };
     report.cached = getKnown(/^tt\d+$/i.test(id) ? id : `${type}:${id}`);
     return report;
