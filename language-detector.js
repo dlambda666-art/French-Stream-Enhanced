@@ -10,6 +10,7 @@
 const fetch = require('node-fetch');
 
 const persistence = require('./language-store');
+const streamLanguage = require('./stream-language');
 
 // Une fois trouvee, une VF reste dispo : on la garde 30 jours.
 // Sans VF (rien, ou VOSTFR seul), on reverifie apres 3 jours : la VF peut
@@ -299,6 +300,16 @@ async function runDetection(key, id, type) {
     const tag = (await onFrenchPlatform(info)) ? 'DUB' : await detectOnFrenchStream(info);
     store(key, tag, info.poster, info.imdbId);
     if (info.imdbId && info.imdbId !== key) store(info.imdbId, tag, info.poster, info.imdbId);
+
+    // Pas de VF trouvee : dernier recours, les streams de l'utilisateur, en
+    // arriere-plan. Ne fait qu'ajouter une VF.
+    if (tag !== 'DUB' && tag !== 'DUB_SUB' && info.imdbId) {
+        streamLanguage.enqueue(info.imdbId, info.type, () => {
+            const upgraded = tag === 'SUB' ? 'DUB_SUB' : 'DUB';
+            store(key, upgraded, info.poster, info.imdbId);
+            if (info.imdbId !== key) store(info.imdbId, upgraded, info.poster, info.imdbId);
+        });
+    }
     return getKnown(key);
 }
 
@@ -392,8 +403,10 @@ async function describePage(item) {
 // Diagnostic (lab) : refait la detection pas a pas, sans cache.
 async function explain(id, type) {
     const report = { id, type, tmdbKey: Boolean(tmdbKey()), steps: [] };
+    let info0 = null;
     try {
         const info = await lookupTitle(id, type);
+        info0 = info;
         report.tmdb = info;
         if (!info) return report;
         report.frenchPlatform = await onFrenchPlatform(info);
@@ -415,6 +428,8 @@ async function explain(id, type) {
     } catch (error) {
         report.error = error.message;
     }
+    report.streams = info0 && info0.imdbId ? await streamLanguage.explain(info0.imdbId, info0.type) : { enabled: streamLanguage.isEnabled() };
+    report.streamsStatus = streamLanguage.status;
     report.database = { ...persistence.status, inMemory: results.size };
     report.cached = getKnown(/^tt\d+$/i.test(id) ? id : `${type}:${id}`);
     return report;
