@@ -133,6 +133,44 @@ async function onFrenchPlatform(info) {
     }
 }
 
+// TMDB ne relie pas toujours un id IMDb a sa fiche (ex. la serie "Monster").
+// On demande alors le nom et l'annee a Cinemeta, puis on cherche sur TMDB.
+async function lookupViaCinemeta(imdbId, type) {
+    const kind = type === 'series' ? 'series' : 'movie';
+    let meta = null;
+    try {
+        const response = await fetch(`https://v3-cinemeta.strem.io/meta/${kind}/${imdbId}.json`);
+        if (response.ok) meta = (await response.json()).meta || null;
+    } catch (error) {
+        return null;
+    }
+    if (!meta || !meta.name) return null;
+
+    const year = Number(String(meta.year || meta.releaseInfo || '').slice(0, 4)) || null;
+    const mediaType = kind === 'series' ? 'tv' : 'movie';
+    const yearParam = year ? `&${mediaType === 'tv' ? 'first_air_date_year' : 'year'}=${year}` : '';
+    try {
+        const search = await tmdbJson(`/search/${mediaType}?query=${encodeURIComponent(meta.name)}${yearParam}`);
+        const info = toTitleInfo(search.results?.[0], mediaType);
+        if (info) {
+            info.imdbId = imdbId;
+            if (!info.titles.includes(meta.name)) info.titles.push(meta.name);
+            return info;
+        }
+    } catch (error) {
+        // pas grave : on garde le nom de Cinemeta
+    }
+    return {
+        type: kind,
+        titles: [meta.name],
+        poster: meta.poster || null,
+        year,
+        imdbId,
+        tmdbId: null,
+        mediaType
+    };
+}
+
 async function lookupTitle(id, type) {
     if (/^tt\d+$/i.test(id)) {
         const data = await tmdbJson(`/find/${id}?external_source=imdb_id`);
@@ -141,8 +179,11 @@ async function lookupTitle(id, type) {
         const info = type === 'series'
             ? toTitleInfo(tv, 'tv') || toTitleInfo(movie, 'movie')
             : toTitleInfo(movie, 'movie') || toTitleInfo(tv, 'tv');
-        if (info) info.imdbId = id;
-        return info;
+        if (info) {
+            info.imdbId = id;
+            return info;
+        }
+        return lookupViaCinemeta(id, type);
     }
     const mediaType = type === 'series' ? 'tv' : 'movie';
     const details = await tmdbJson(`/${mediaType}/${id}?append_to_response=external_ids`);

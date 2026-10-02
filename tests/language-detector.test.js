@@ -30,6 +30,8 @@ const fakeTmdb = {
     '/movie/900/watch/providers': { results: { FR: { flatrate: [{ provider_name: 'Netflix' }] } } },
     '/find/tt0000901': { movie_results: [{ id: 901, title: 'Film en location', original_title: 'Rental Movie', release_date: '2023-01-01' }], tv_results: [] },
     '/movie/901/watch/providers': { results: { FR: { rent: [{ provider_name: 'Apple TV' }] } } },
+    '/search/tv': { results: [{ id: 777, name: 'Monstre', original_name: 'Monster', first_air_date: '2022-09-21' }] },
+    '/tv/777/watch/providers': { results: { BE: { flatrate: [{ provider_name: 'Netflix' }] } } },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 
@@ -37,6 +39,11 @@ const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
     if (request === 'node-fetch') {
         return async url => {
+            if (url.includes('cinemeta')) {
+                const metas = { tt0000777: { name: 'Monster', year: '2022–', poster: 'https://c/m.jpg' } };
+                const meta = metas[url.match(/tt\d+/)[0]];
+                return { ok: Boolean(meta), status: meta ? 200 : 404, json: async () => ({ meta }) };
+            }
             if (url.includes('french-stream')) {
                 return { ok: true, text: async () => '<li><span>Version:</span><span id="film_lang"><a href="/x">VF+VOSTFR</a></span></li>' };
             }
@@ -118,6 +125,11 @@ const detector = require(path.join(__dirname, '..', 'language-detector.js'));
     // Seulement en location -> on passe par French Stream (ici : rien)
     assert.equal((await detector.detect('tt0000901', 'movie')).tag, 'NONE');
     assert.equal(searches.length, beforePlatform + 2);
+
+    // Id IMDb inconnu de TMDB -> titre via Cinemeta, puis TMDB par le nom
+    const monster = await detector.detect('tt0000777', 'series');
+    assert.equal(monster.tag, 'DUB'); // Netflix en Belgique
+    assert.equal(monster.imdbId, 'tt0000777');
 
     // Titre absent de TMDB -> NONE, sans planter
     assert.equal((await detector.detect('tt9999999', 'movie')).tag, 'NONE');
