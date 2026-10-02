@@ -75,8 +75,10 @@ async function runOnce(detect, { gapMs = GAP_MS } = {}) {
                     const id = detectionIdOf(meta);
                     if (!id) continue;
                     titles++;
-                    // Deja connu : rien a faire ; sinon il part en file.
-                    detect(id, catalog.type);
+                    // Un titre a la fois : deja connu = immediat ; sinon on
+                    // attend sa verification (la file du detecteur est limitee,
+                    // et les affiches affichees a l'ecran passent devant).
+                    await detect(id, catalog.type);
                 }
             } catch (error) {
                 status.lastError = error.message;
@@ -93,7 +95,14 @@ async function runOnce(detect, { gapMs = GAP_MS } = {}) {
 
 function start(detect) {
     if (!manifestUrls().length) return;
-    const run = () => runOnce(detect).catch(error => { status.lastError = error.message; });
+    let busy = false;
+    const run = () => {
+        if (busy) return; // le passage precedent n'est pas fini
+        busy = true;
+        runOnce(detect)
+            .catch(error => { status.lastError = error.message; })
+            .finally(() => { busy = false; });
+    };
     setTimeout(run, FIRST_RUN_DELAY_MS);
     setInterval(run, intervalMs());
 }
