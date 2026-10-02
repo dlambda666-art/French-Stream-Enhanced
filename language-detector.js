@@ -122,13 +122,17 @@ function toTitleInfo(item, mediaType) {
 // La location et l'achat ne comptent pas (VO seule possible).
 const PROVIDER_REGIONS = ['FR', 'BE'];
 const PROVIDER_KINDS = ['flatrate', 'free', 'ads'];
+// Seulement les grandes plateformes qui doublent. Les plateformes de niche
+// (Shadowz, MUBI, Crunchyroll...) diffusent souvent en VOSTFR seul.
+const DUBBING_PROVIDERS = /netflix|amazon|prime video|disney|canal|apple tv|^max\b|hbo|paramount|tf1|^m6|france ?tv|france\.tv|arte|auvio|rtbf|vtm|streamz|salto/i;
 
 async function onFrenchPlatform(info) {
     if (!info.tmdbId) return false;
     try {
         const data = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`);
         return PROVIDER_REGIONS.some(region =>
-            PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || []).length > 0));
+            PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || [])
+                .some(provider => DUBBING_PROVIDERS.test(provider.provider_name || ''))));
     } catch (error) {
         return false; // pas grave : on passe par French Stream
     }
