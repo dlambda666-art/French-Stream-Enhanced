@@ -414,6 +414,11 @@ async function explain(id, type) {
         report.tmdb = info;
         if (!info) return report;
         report.frenchPlatform = await onFrenchPlatform(info);
+        if (info.tmdbId) {
+            const providers = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`).catch(() => ({}));
+            report.platforms = PROVIDER_REGIONS.flatMap(region => PROVIDER_KINDS.flatMap(kind =>
+                (providers.results?.[region]?.[kind] || []).map(p => `${region}:${p.provider_name}`)));
+        }
         const { searchFrenchStreamStrict, normalizeSearchValue } = require('./addon');
         for (const title of uniqueTitles(info.titles, normalizeSearchValue)) {
             const items = await searchFrenchStreamStrict(title, info.type);
