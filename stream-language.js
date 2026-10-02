@@ -35,10 +35,12 @@ function isEnabled() {
 // Sous-titres seulement : le fichier ne compte jamais pour la VF.
 const SUBTITLE_ONLY = /\bVOST(?:FR)?\b|\bSTFR\b|\bSUB\.?FR(?:ENCH)?\b|\bSUBFRENCH\b|\bFRENCH[ ._-]*SUB(?:S|BED|TITLE[SD]?)?\b|\bSOUS[ ._-]*TITR/i;
 // Audio francais.
-const FRENCH_AUDIO = /\bVF[FQI2]?\b|\bTRUE[ ._-]*FRENCH\b|\bFRENCH\b|\bVERSION FRAN[CÇ]AISE\b|🇫🇷/i;
+// (Le drapeau 🇫🇷 d'AIOStreams est ignore : c'est son etiquette de langue,
+// qui confond audio et sous-titres.)
+const FRENCH_AUDIO = /\bVF[FQI2]?\b|\bTRUE[ ._-]*FRENCH\b|\bFRENCH\b|\bVERSION FRAN[CÇ]AISE\b/i;
 // MULTI = VO + VF seulement chez les sources francaises.
 const MULTI = /\bMULTI(?:[ ._-]*(?:VFF|VFQ|VF2|TRUEFRENCH|FRENCH))?\b/i;
-const FRENCH_SOURCE = /frenchio|stream ?fusion|french ?stream|wawacity|zone ?telechargement|darki|yggtorrent|ygg/i;
+const FRENCH_SOURCE = /frenchio|stream ?fusion|lumio|french ?stream|wawacity|zone ?telechargement|darki|yggtorrent|ygg/i;
 
 function streamText(stream) {
     return [

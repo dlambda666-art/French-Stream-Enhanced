@@ -39,6 +39,9 @@ assert.equal(vf('Film.2020.STFR.720p'), false);
 // MULTI : seulement chez une source francaise
 assert.equal(vf('Film.2020.MULTI.1080p'), false);
 assert.equal(streams.hasFrenchAudio({ name: 'Frenchio', title: 'Film.2020.MULTI.1080p' }), true);
+// Le drapeau 🇫🇷 d'AIOStreams seul ne suffit pas
+assert.equal(streams.hasFrenchAudio({ name: 'Torrentio 🗣️ 🇫🇷', title: 'Film.2020.1080p.WEB' }), false);
+assert.equal(streams.hasFrenchAudio({ name: 'DuckStream | Lumio 🇫🇷', title: 'Film.2020.MULTI.1080p' }), true);
 // Pas de faux positif sur un mot qui contient "VF"
 assert.equal(vf('Film.2020.1080p.AVFx'), false);
 
