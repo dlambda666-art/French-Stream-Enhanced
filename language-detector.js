@@ -446,6 +446,8 @@ async function explain(id, type) {
     report.streams = info0 && info0.imdbId ? await streamLanguage.explain(info0.imdbId, info0.type) : { enabled: streamLanguage.isEnabled() };
     report.streamsStatus = streamLanguage.status;
     report.database = { ...persistence.status, inMemory: results.size };
+    report.warmupStatus = require('./warmup').status;
+    report.queue = queue.length;
     report.cached = getKnown(/^tt\d+$/i.test(id) ? id : `${type}:${id}`);
     return report;
 }
