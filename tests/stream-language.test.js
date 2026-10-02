@@ -6,7 +6,7 @@ const path = require('node:path');
 const fakeStreams = {
     tt0000001: [{ name: 'Torrentio', title: 'Film.2020.VOSTFR.1080p.WEB' }],
     tt0000002: [{ name: 'Torrentio', title: 'Film.2020.VOSTFR.1080p' }, { name: 'Frenchio', title: 'Film.2020.TRUEFRENCH.1080p.WEB' }],
-    'tt0000003:1:1': [{ name: 'StreamFusion', description: 'Serie.S01E01.MULTI.1080p' }]
+    'tt0000003:1:1': [{ name: 'StreamFusion 🇫🇷', description: 'Serie.S01E01.MULTI.1080p' }]
 };
 
 const originalLoad = Module._load;
@@ -38,7 +38,9 @@ assert.equal(vf('Film.2020.FRENCH.SUBBED.1080p'), false);
 assert.equal(vf('Film.2020.STFR.720p'), false);
 // MULTI : seulement chez une source francaise
 assert.equal(vf('Film.2020.MULTI.1080p'), false);
-assert.equal(streams.hasFrenchAudio({ name: 'Frenchio', title: 'Film.2020.MULTI.1080p' }), true);
+assert.equal(streams.hasFrenchAudio({ name: 'Frenchio 🇫🇷', title: 'Film.2020.MULTI.1080p' }), true);
+// MULTI chez une source francaise mais sans drapeau 🇫🇷 : pas de VF (cas The Yeti)
+assert.equal(streams.hasFrenchAudio({ name: 'DuckStream | Lumio 🗣️ 🌎', title: 'The.Yeti.2026.MULTi.1080p.AMZN.WEB-DL.H.264.DD2.0-RX.mkv' }), false);
 // Le drapeau 🇫🇷 d'AIOStreams seul ne suffit pas
 assert.equal(streams.hasFrenchAudio({ name: 'Torrentio 🗣️ 🇫🇷', title: 'Film.2020.1080p.WEB' }), false);
 assert.equal(streams.hasFrenchAudio({ name: 'DuckStream | Lumio 🇫🇷', title: 'Film.2020.MULTI.1080p' }), true);

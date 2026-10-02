@@ -6,6 +6,7 @@
 // simple requete HTTPS : pas de dependance en plus.
 // Table v2 : repart sans les faux "VF" de la premiere version de la
 // verification plateforme (chaines Amazon de niche).
+// Table v3 : repart sans les faux "VF" des MULTI sans piste francaise.
 // Sans variable FRANK_DATABASE_URL, ou si la base ne repond pas, Frank continue
 // avec sa memoire habituelle : rien ne casse.
 // ============================================================================
@@ -41,7 +42,7 @@ let ready = null;
 function init() {
     if (!connectionString()) return Promise.resolve(false);
     if (!ready) {
-        ready = sql(`CREATE TABLE IF NOT EXISTS frank_language_v2 (
+        ready = sql(`CREATE TABLE IF NOT EXISTS frank_language_v3 (
                 key TEXT PRIMARY KEY,
                 tag TEXT NOT NULL,
                 poster TEXT,
@@ -66,7 +67,7 @@ function init() {
 async function loadAll() {
     if (!(await init())) return [];
     try {
-        const rows = await sql('SELECT key, tag, poster, imdb_id, expires_at FROM frank_language_v2 WHERE expires_at > $1', [String(Date.now())]);
+        const rows = await sql('SELECT key, tag, poster, imdb_id, expires_at FROM frank_language_v3 WHERE expires_at > $1', [String(Date.now())]);
         status.loaded = rows.length;
         return rows.map(([key, tag, poster, imdbId, expires]) => ({ key, tag, poster: poster || null, imdbId: imdbId || null, expires: Number(expires) }));
     } catch (error) {
@@ -80,7 +81,7 @@ function save(key, entry) {
     if (!connectionString()) return;
     init()
         .then(ok => ok && sql(
-            `INSERT INTO frank_language_v2 (key, tag, poster, imdb_id, expires_at)
+            `INSERT INTO frank_language_v3 (key, tag, poster, imdb_id, expires_at)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (key) DO UPDATE SET tag = EXCLUDED.tag, poster = EXCLUDED.poster,
                  imdb_id = EXCLUDED.imdb_id, expires_at = EXCLUDED.expires_at`,

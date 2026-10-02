@@ -38,7 +38,10 @@ const SUBTITLE_ONLY = /\bVOST(?:FR)?\b|\bSTFR\b|\bSUB\.?FR(?:ENCH)?\b|\bSUBFRENC
 // (Le drapeau 🇫🇷 d'AIOStreams est ignore : c'est son etiquette de langue,
 // qui confond audio et sous-titres.)
 const FRENCH_AUDIO = /\bVF[FQI2]?\b|\bTRUE[ ._-]*FRENCH\b|\bFRENCH\b|\bVERSION FRAN[CÇ]AISE\b/i;
-// MULTI = VO + VF seulement chez les sources francaises.
+// MULTI = VO + VF seulement chez les sources francaises, et si AIOStreams y a
+// vu du francais (drapeau 🇫🇷) : un MULTI sans drapeau peut etre VO + autres
+// langues (ex. The Yeti, MULTi AMZN sans piste francaise).
+const FRENCH_FLAG = /\u{1F1EB}\u{1F1F7}/u;
 const MULTI = /\bMULTI(?:[ ._-]*(?:VFF|VFQ|VF2|TRUEFRENCH|FRENCH))?\b/i;
 const FRENCH_SOURCE = /frenchio|stream ?fusion|lumio|french ?stream|wawacity|zone ?telechargement|darki|yggtorrent|ygg/i;
 
@@ -57,7 +60,7 @@ function hasFrenchAudio(stream) {
     const text = streamText(stream);
     if (SUBTITLE_ONLY.test(text)) return false;
     if (FRENCH_AUDIO.test(text)) return true;
-    return MULTI.test(text) && FRENCH_SOURCE.test(text);
+    return MULTI.test(text) && FRENCH_SOURCE.test(text) && FRENCH_FLAG.test(text);
 }
 
 function streamId(imdbId, type) {

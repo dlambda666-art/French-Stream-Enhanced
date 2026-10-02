@@ -34,7 +34,7 @@ const store = require(path.join(__dirname, '..', 'language-store.js'));
     // Requetes envoyees a l'API SQL de Neon, avec la chaine de connexion
     assert.equal(calls[0].url, 'https://ep-test-123.eu-central-1.aws.neon.tech/sql');
     assert.equal(calls[0].headers['Neon-Connection-String'], process.env.FRANK_DATABASE_URL);
-    assert.match(calls[0].query, /CREATE TABLE IF NOT EXISTS frank_language_v2/);
+    assert.match(calls[0].query, /CREATE TABLE IF NOT EXISTS frank_language_v3/);
 
     // Au redemarrage : seuls les resultats encore valides reviennent
     const rows = await store.loadAll();
