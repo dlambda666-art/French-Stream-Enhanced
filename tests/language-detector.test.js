@@ -33,7 +33,7 @@ const fakeTmdb = {
     '/search/tv': { results: [{ id: 777, name: 'Monstre', original_name: 'Monster', first_air_date: '2022-09-21' }] },
     '/tv/777/watch/providers': { results: { BE: { flatrate: [{ provider_name: 'Netflix' }] } } },
     '/find/tt0000902': { movie_results: [{ id: 902, title: 'Film Shadowz', original_title: 'Shadowz Movie', release_date: '2024-01-01' }], tv_results: [] },
-    '/movie/902/watch/providers': { results: { FR: { flatrate: [{ provider_name: 'Shadowz' }] } } },
+    '/movie/902/watch/providers': { results: { FR: { flatrate: [{ provider_name: 'Shadowz' }, { provider_name: 'Insomnia Amazon Channel' }, { provider_name: 'Molotov TV' }] } } },
     '/tv/42': { name: 'Shogun', original_name: 'Shōgun', poster_path: '/s.jpg', external_ids: { imdb_id: 'tt0000042' } }
 };
 

@@ -124,7 +124,10 @@ const PROVIDER_REGIONS = ['FR', 'BE'];
 const PROVIDER_KINDS = ['flatrate', 'free', 'ads'];
 // Seulement les grandes plateformes qui doublent. Les plateformes de niche
 // (Shadowz, MUBI, Crunchyroll...) diffusent souvent en VOSTFR seul.
-const DUBBING_PROVIDERS = /netflix|amazon|prime video|disney|canal|apple tv|^max\b|hbo|paramount|tf1|^m6|france ?tv|france\.tv|arte|auvio|rtbf|vtm|streamz|salto/i;
+// Les "chaines Amazon" (Insomnia, Shadowz, OCS...) sont des options de niche,
+// souvent en VOSTFR : elles ne comptent pas, seul Prime Video lui-meme compte.
+const DUBBING_PROVIDERS = /netflix|prime video|disney|canal|apple tv|^max\b|hbo|paramount|tf1|^m6|france ?tv|france\.tv|arte|auvio|rtbf|vtm|streamz|salto/i;
+const NICHE_CHANNEL = /channel|chaine|chaîne/i;
 
 async function onFrenchPlatform(info) {
     if (!info.tmdbId) return false;
@@ -132,7 +135,10 @@ async function onFrenchPlatform(info) {
         const data = await tmdbJson(`/${info.mediaType}/${info.tmdbId}/watch/providers`);
         return PROVIDER_REGIONS.some(region =>
             PROVIDER_KINDS.some(kind => (data.results?.[region]?.[kind] || [])
-                .some(provider => DUBBING_PROVIDERS.test(provider.provider_name || ''))));
+                .some(provider => {
+                    const name = provider.provider_name || '';
+                    return DUBBING_PROVIDERS.test(name) && !NICHE_CHANNEL.test(name);
+                })));
     } catch (error) {
         return false; // pas grave : on passe par French Stream
     }
